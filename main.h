@@ -8,15 +8,20 @@
 #pragma once
 #include <vector>
 #include <cstdlib>
+#include <optional>
 #include <iostream>
 #include <stdexcept>
 
+#include <spdlog/spdlog.h>
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 #include <iostream>
+
+
+void init_spdlog();
 
 
 class Application
@@ -31,18 +36,48 @@ public:
     }
 
 private:
+    // 窗口对象，需要手动释放资源
     GLFWwindow    *window{};
     const uint32_t WIDTH  = 800;
     const uint32_t HEIGHT = 600;
-    VkInstance     instance{};  // 整个应用程序的 vulkan instance
+    // 整个应用程序的 vulkan instance，需要手动释放资源
+    VkInstance instance{VK_NULL_HANDLE};
 
     // 需要用到的 layer
     const std::vector<const char *> needed_layer_list = {
-            "VK_LAYER_KHRONOS_validation",  // validation layer
+            "VK_LAYER_KHRONOS_validation",    // validation layer
     };
 
-    // 用于 debug 的 messenger
+    // debug messenger 的 handle，需要最后手动释放资源
     VkDebugUtilsMessengerEXT debug_messenger;
+
+    // 物理设备的 handle，在销毁 instance 时会自动销毁，无需手动释放资源
+    VkPhysicalDevice physical_device{VK_NULL_HANDLE};
+
+    // 逻辑设备的 handle
+    VkDevice device;
+
+    // debug messenger 相关的配置信息
+    VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info = {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            // 会触发 callback 的严重级别
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            // 会触发 callback 的信息类型
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = debug_callback,    // 回调函数
+            .pUserData       = nullptr,
+    };
+
+
+    struct QueueFamilyIndices {
+        std::optional<uint32_t> graphics_family;    // 支持 VK_QUEUE_GRAPHICS_BIT 的 queue family
+
+        bool is_complete() { return graphics_family.has_value(); }
+    };
 
     /**
      * 通过 glfw 来初始化 window
@@ -64,17 +99,12 @@ private:
     /**
      * 获得当前应用所需的扩展
      */
-    [[nodiscard]] static std::vector<const char *> get_required_ext() ;
+    [[nodiscard]] static std::vector<const char *> get_required_ext();
 
     /**
      * 为 instance 设置用于 debug 的 messenger，只有开启了 validation layer 才能用这个
      */
     void setup_debug_messenger();
-
-    /**
-     * 创建一个 create info，它用于创建 DebugUtilsMessenger
-     */
-    static VkDebugUtilsMessengerCreateInfoEXT gen_debug_messenger_create_info();
 
     /**
      * 用于 debug 的回调函数
@@ -88,6 +118,27 @@ private:
     debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
                    VkDebugUtilsMessageTypeFlagsEXT             message_type,
                    const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data);
+
+    /**
+     * 选择一个 physical device 来使用
+     */
+    void pick_gpu();
+
+    /**
+     * 检查一个 physical device 释放适合当前应用
+     * 会检查 device 支持的 feature，检查其支持的 queue family
+     */
+    static bool is_gpu_suitable(VkPhysicalDevice device);
+
+    /**
+     * 找到 physical device 支持的 queue families
+     * 不同的 queue families 支持不同类型的 command
+     * 例如：一些只支持 compute command，另一些只支持 transfer command
+     * @return 某个 queue family 在 device 的 queue family 列表的 index
+     */
+    static QueueFamilyIndices find_queue_families(VkPhysicalDevice device);
+
+    void create_logical_device();
 
     void mainLoop();
 

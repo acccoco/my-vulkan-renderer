@@ -1,8 +1,12 @@
 
 #include "./main.h"
+#include <sstream>
+#include <cassert>
 
 int main()
 {
+    init_spdlog();
+
     Application app{};
 
     try
@@ -10,11 +14,18 @@ int main()
         app.run();
     } catch (const std::exception &e)
     {
-        std::cerr << e.what() << std::endl;
+        SPDLOG_ERROR("{}", e.what());
         return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;
+}
+
+
+void init_spdlog()
+{
+    spdlog::set_level(spdlog::level::trace);
+    spdlog::set_pattern("[%^%L%$]%v");
 }
 
 
@@ -35,6 +46,8 @@ void Application::init_vulkan()
         throw std::runtime_error("validation layer required, but not available.");
     create_instance();
     setup_debug_messenger();
+    pick_gpu();
+    create_logical_device();
 }
 
 
@@ -63,25 +76,27 @@ void Application::create_instance()
         std::vector<VkExtensionProperties> ext_list(ext_cnt);
         vkEnumerateInstanceExtensionProperties(nullptr, &ext_cnt, ext_list.data());
         // 打印出扩展
-        std::cout << "available extensions(" << ext_cnt << "):\n";
+        std::stringstream ss;
+        ss << "available extensions(" << ext_cnt << "): \n";
         for (const auto &ext: ext_list)
-            std::cout << '\t' << ext.extensionName << '\n';
+            ss << "\t" << ext.extensionName << "\n";
+        SPDLOG_INFO("{}", ss.str());
     }
-
-    /// 一般情况下 debug messenger 只有在 instance 创建后和销毁前才是有效的，
-    ///     将这个 create info 传递给 instance 创建信息的 pNext 字段，
-    ///     可以在 instance 的创建和销毁过程进行 debug
-    VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info =
-            gen_debug_messenger_create_info();
 
     // 这些数据用于指定当前应用程序需要的全局 extension 以及 validation layers
     VkInstanceCreateInfo create_info = {
-            .sType            = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+
+            /// 一般情况下 debug messenger 只有在 instance 创建后和销毁前才是有效的，
+            ///     将这个 create info 传递给 instance 创建信息的 pNext 字段，
+            ///     可以在 instance 的创建和销毁过程进行 debug
             .pNext            = &debug_messenger_create_info,
             .pApplicationInfo = &app_info,
+
             // layers
             .enabledLayerCount   = (uint32_t) (needed_layer_list.size()),
             .ppEnabledLayerNames = needed_layer_list.data(),
+
             // extensions
             .enabledExtensionCount   = (uint32_t) required_extensions.size(),
             .ppEnabledExtensionNames = required_extensions.data(),
@@ -103,9 +118,11 @@ bool Application::check_validation_layer()
     // 当前系统支持的 layer
     std::vector<VkLayerProperties> supported_layer_list(layer_cnt);
     vkEnumerateInstanceLayerProperties(&layer_cnt, supported_layer_list.data());
-    std::cout << "available layers(" << layer_cnt << "):\n";
+    std::stringstream log_ss;
+    log_ss << "available layers(" << layer_cnt << "):\n";
     for (const auto &layer: supported_layer_list)
-        std::cout << '\t' << layer.layerName << ": " << layer.description << '\n';
+        log_ss << "\t" << layer.layerName << ": " << layer.description << "\n";
+    SPDLOG_INFO("{}", log_ss.str());
 
     // 检查需要的 layer 是否受支持（笛卡尔积操作）
     for (const char *layer_needed: needed_layer_list)
@@ -141,36 +158,20 @@ std::vector<const char *> Application::get_required_ext()
     const char *validation_ext_name = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
     ext_list.push_back(validation_ext_name);
 
-
     // 所有的扩展
-    std::cout << "application require extensions(" << ext_list.size() << "):\n";
+    std::stringstream log_ss;
+    log_ss << "application require extensions(" << ext_list.size() << "): \n";
     for (const char *ext: ext_list)
-        std::cout << '\t' << ext << '\n';
+        log_ss << "\t" << ext << "\n";
+    SPDLOG_INFO("{}", log_ss.str());
     return ext_list;
-}
-
-
-VkDebugUtilsMessengerCreateInfoEXT Application::gen_debug_messenger_create_info()
-{
-    return VkDebugUtilsMessengerCreateInfoEXT{
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            // 会触发 callback 的严重级别
-            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            // 会触发 callback 的信息类型
-            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = debug_callback,    // 回调函数
-            .pUserData       = nullptr,
-    };
 }
 
 
 void Application::setup_debug_messenger()
 {
-    VkDebugUtilsMessengerCreateInfoEXT create_info = gen_debug_messenger_create_info();
+    // 这个函数需要在 instance 已经创建之后执行
+    assert(instance != VK_NULL_HANDLE);
 
     // 因为 vkCreateDebugUtilsMessengerEXT 是扩展函数，因此需要查询函数指针
     auto vkCreateDebugUtilsMessengerEXT =
@@ -180,8 +181,8 @@ void Application::setup_debug_messenger()
         throw std::runtime_error("failed to find function(vkCreateDebugUtilsMessengerEXT)");
 
     // 为 instance 设置 debug messenger
-    if (vkCreateDebugUtilsMessengerEXT(instance, &create_info, nullptr, &debug_messenger) !=
-        VK_SUCCESS)
+    if (vkCreateDebugUtilsMessengerEXT(instance, &debug_messenger_create_info, nullptr,
+                                       &debug_messenger) != VK_SUCCESS)
         throw std::runtime_error("failed to setup debug messenger.");
 }
 
@@ -191,15 +192,7 @@ VkBool32 Application::debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT     
                                      const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
                                      void *)
 {
-    const char *severity;
-    switch (message_severity)
-    {
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: severity = "V"; break;
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: severity = "I"; break;
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: severity = "W"; break;
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: severity = "E"; break;
-        default: severity = "?";
-    }
+
     const char *type;
     switch (message_type)
     {
@@ -209,8 +202,15 @@ VkBool32 Application::debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT     
         default: type = "?";
     }
 
-    std::cerr << "validation layer[" << severity << "][" << type << "]: " << callback_data->pMessage
-              << std::endl;
+    switch (message_severity)
+    {
+#define _TEMP_LOG_(logger) logger("[validation layer][{}]: {}", type, callback_data->pMessage)
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: _TEMP_LOG_(SPDLOG_WARN); break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: _TEMP_LOG_(SPDLOG_ERROR); break;
+        default: _TEMP_LOG_(SPDLOG_INFO);
+#undef _TEMP_LOG_
+    }
+
     return VK_FALSE;
 }
 
@@ -242,3 +242,101 @@ void Application::cleanup()
     glfwDestroyWindow(window);
     glfwTerminate();
 }
+
+
+void Application::pick_gpu()
+{
+    // 这个函数需要在 instance 创建之后执行
+    assert(instance != VK_NULL_HANDLE);
+
+    // 获得 physical device 的列表
+    uint32_t device_cnt = 0;
+    vkEnumeratePhysicalDevices(instance, &device_cnt, nullptr);
+    if (device_cnt == 0)
+        throw std::runtime_error("no physical device found with vulkan support.");
+    std::vector<VkPhysicalDevice> device_list(device_cnt);
+    vkEnumeratePhysicalDevices(instance, &device_cnt, device_list.data());
+    SPDLOG_INFO("physical device with vulkan support:({})", device_cnt);
+
+    // 检查 physical device 是否符合要求，只需要其中一块就够了
+    for (const auto &device: device_list)
+    {
+        if (is_gpu_suitable(device))
+        {
+            physical_device = device;
+            break;
+        }
+    }
+    if (physical_device == VK_NULL_HANDLE)
+        throw std::runtime_error("failed to find a suitable GPU.");
+}
+
+
+bool Application::is_gpu_suitable(VkPhysicalDevice device)
+{
+    // 检查 physical device 的 properties 和 feature
+    VkPhysicalDeviceProperties device_properties;
+    VkPhysicalDeviceFeatures   device_features;
+    vkGetPhysicalDeviceProperties(device, &device_properties);
+    vkGetPhysicalDeviceFeatures(device, &device_features);
+    {
+        std::stringstream ss;
+        ss << "physical deivice info: \n";
+        ss << "\t name: " << device_properties.deviceName << "\n";
+        ss << "\t type: " << device_properties.deviceType
+           << "(0:other, 1:integrated-gpu, 2:discretegpu, 3:virtual-gpu, 4:cpu)\n";
+        /// Mac M1 并不支持 geometry shader，实际上，geometry shader 效率很低
+        /// 应该使用 compute shader 来替代
+        /// https://forum.unity.com/threads/geometry-shader-on-mac.1056659/
+        ss << "\t geometry shader(bool): " << device_features.geometryShader << "\n";
+        ss << "\t tessellation shader(bool): " << device_features.tessellationShader << "\n";
+        SPDLOG_INFO("{}", ss.str());
+    }
+    if (!device_features.tessellationShader)
+        return false;
+
+    // 检查 physical device 的 queue family
+    QueueFamilyIndices indices = find_queue_families(device);
+    if (!indices.is_complete())
+        return false;
+    SPDLOG_INFO("queue family is supported.");
+
+    return true;
+}
+
+
+Application::QueueFamilyIndices Application::find_queue_families(VkPhysicalDevice device)
+{
+    uint32_t queue_family_cnt = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_cnt, nullptr);
+
+    std::vector<VkQueueFamilyProperties> queue_family(queue_family_cnt);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_cnt, queue_family.data());
+
+    QueueFamilyIndices indices;
+    for (int i = 0; i < queue_family_cnt; ++i)
+    {
+        if (queue_family[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            indices.graphics_family = i;
+    }
+
+    return indices;
+}
+
+
+void Application::create_logical_device()
+{
+    // 创建 logical device 需要 physical device
+    assert(physical_device != VK_NULL_HANDLE);
+
+    QueueFamilyIndices indices = find_queue_families(physical_device);
+    assert(indices.is_complete());
+
+    float queue_priority[] = {1.0f};    // 每个队列的优先级，1.f 最高，0.f 最低
+
+    VkDeviceQueueCreateInfo queue_create_info = {
+        .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = indices.graphics_family.value(),
+        .queueCount       = 1,
+        .pQueuePriorities = queue_priority, // 指定每个队列的优先级
+    };

@@ -19,8 +19,9 @@ endif ()
 find_package(glm REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(spdlog REQUIRED)
 
 
 add_executable(VK main.cpp)
 
-target_link_libraries(VK glfw glm::glm Vulkan::Vulkan)
+target_link_libraries(VK glfw glm::glm Vulkan::Vulkan spdlog::spdlog)
