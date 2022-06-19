@@ -12,13 +12,13 @@
 #include <iostream>
 #include <stdexcept>
 
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_beta.h>    // 在 metal 上运行 vulkan，需要这个头文件
 #include <spdlog/spdlog.h>
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
-#include <iostream>
 
 
 void init_spdlog();
@@ -54,8 +54,11 @@ private:
     // 物理设备的 handle，在销毁 instance 时会自动销毁，无需手动释放资源
     VkPhysicalDevice physical_device{VK_NULL_HANDLE};
 
-    // 逻辑设备的 handle
-    VkDevice device;
+    // logical device 的 handle，需要手动释放资源
+    VkDevice logical_device;
+
+    // graphics command 相关的 queue 的 handle，会跟随 logical device 一起销毁
+    VkQueue graphics_queue;
 
     // debug messenger 相关的配置信息
     VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info = {
@@ -72,7 +75,7 @@ private:
             .pUserData       = nullptr,
     };
 
-
+    // index of queue family in one physical device
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphics_family;    // 支持 VK_QUEUE_GRAPHICS_BIT 的 queue family
 

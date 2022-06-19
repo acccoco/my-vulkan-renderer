@@ -90,7 +90,13 @@ void Application::create_instance()
             /// 一般情况下 debug messenger 只有在 instance 创建后和销毁前才是有效的，
             ///     将这个 create info 传递给 instance 创建信息的 pNext 字段，
             ///     可以在 instance 的创建和销毁过程进行 debug
-            .pNext            = &debug_messenger_create_info,
+            .pNext = &debug_messenger_create_info,
+
+            /// 表示 vulkan 除了枚举出默认的 physical device 外，
+            /// 还会枚举出符合 vulkan 可移植性的 physical device
+            /// 基于 metal 的 vulkan 需要这个
+            .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
+
             .pApplicationInfo = &app_info,
 
             // layers
@@ -155,8 +161,11 @@ std::vector<const char *> Application::get_required_ext()
         ext_list.push_back(glfw_ext_list[i]);
 
     // validation layer 需要的扩展
-    const char *validation_ext_name = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-    ext_list.push_back(validation_ext_name);
+    ext_list.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+    // 基于 metal API 的 vulkan 实现需要这些扩展
+    ext_list.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    ext_list.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 
     // 所有的扩展
     std::stringstream log_ss;
@@ -228,6 +237,8 @@ void Application::mainLoop()
 
 void Application::cleanup()
 {
+    vkDestroyDevice(logical_device, nullptr);
+
     // vk debug messenger，需要在 instance 之前销毁
     auto vkDestroyDebugUtilsMessengerEXT =
             (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(
@@ -329,14 +340,46 @@ void Application::create_logical_device()
     // 创建 logical device 需要 physical device
     assert(physical_device != VK_NULL_HANDLE);
 
+    // 创建 queue 需要的信息
     QueueFamilyIndices indices = find_queue_families(physical_device);
-    assert(indices.is_complete());
-
-    float queue_priority[] = {1.0f};    // 每个队列的优先级，1.f 最高，0.f 最低
-
+    float queue_priority[]     = {1.0f};    // 每个队列的优先级，1.f 最高，0.f 最低
     VkDeviceQueueCreateInfo queue_create_info = {
-        .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = indices.graphics_family.value(),
-        .queueCount       = 1,
-        .pQueuePriorities = queue_priority, // 指定每个队列的优先级
+            .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = indices.graphics_family.value(),
+            .queueCount       = 1,
+            .pQueuePriorities = queue_priority,    // 指定每个队列的优先级
     };
+
+    // locgical device 需要的 feature
+    VkPhysicalDeviceFeatures device_feature{};
+    std::vector<const char*> device_ext_list = {
+            // 这是一个临时的扩展（vulkan_beta.h)，在 metal API 上模拟 vulkan 需要这个扩展
+        VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
+    };
+
+    VkDeviceCreateInfo device_create_info = {
+            .sType                = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .queueCreateInfoCount = 1,
+            .pQueueCreateInfos    = &queue_create_info,
+
+            /// logical device 也需要有 validation layer
+            /// 但是最新的实现已经不需要专门为 logical device 指定 validation layer 了
+            .enabledLayerCount   = (uint32_t) needed_layer_list.size(),
+            .ppEnabledLayerNames = needed_layer_list.data(),
+
+            .enabledExtensionCount = (uint32_t) device_ext_list.size(),
+            .ppEnabledExtensionNames = device_ext_list.data(),
+
+            .pEnabledFeatures = &device_feature,    // 指定 logical device 的 features
+    };
+
+    if (vkCreateDevice(physical_device, &device_create_info, nullptr, &logical_device) !=
+        VK_SUCCESS)
+        throw std::runtime_error("failed to create logical device.");
+
+    // 取得 logical device 的各个 queue 的 handle
+    // 第二个参数表示 queue family
+    // 第三个参数表示该 queue family 中 queue 的 index，
+    //  因为只创建了一个 graphics queue family 的 queue，因此 index = 0
+    vkGetDeviceQueue(logical_device, indices.graphics_family.value(), 0, &graphics_queue);
+}
