@@ -1,7 +1,9 @@
-
 #include "./main.h"
+#include <set>
 #include <sstream>
+#include <limits>
 #include <cassert>
+#include <algorithm>
 
 int main()
 {
@@ -29,6 +31,167 @@ void init_spdlog()
 }
 
 
+VkSurfaceFormatKHR
+Application::choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats)
+{
+    for (const auto &format: formats)
+    {
+        SPDLOG_INFO("format: {}, color space: {}", format.format, format.colorSpace);
+        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+            format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            return format;
+    }
+
+    SPDLOG_WARN("no perfect format.");
+
+    // 如果每个都不合格，那么就选择第一个
+    return formats[0];
+}
+
+
+VkPresentModeKHR
+Application::choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes)
+{
+    for (const auto &present_mode: present_modes)
+    {
+        SPDLOG_INFO("present mode: {}", present_mode);
+        if (present_mode == VK_PRESENT_MODE_MAILBOX_KHR)
+            return present_mode;
+    }
+
+    SPDLOG_WARN("no perfect present model.");
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+
+VkExtent2D Application::choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities)
+{
+    /**
+     * vulkan 使用的是以 pixel 为单位的分辨率，glfw 初始化窗口时使用的是 screen coordinate 为单位的分辨率
+     * 在 Apple Retina display 上，pixel 是 screen coordinate 的 2 倍
+     * 最好的方法就是使用 glfwGetFramebufferSize 去查询 window 以 pixel 为单位的大小
+     */
+    assert(window != nullptr);
+
+    // numeric_limits::max 的大小表示自适应大小
+    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+        return capabilities.currentExtent;
+
+    int width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+
+    VkExtent2D acture_extent = {(uint32_t) width, (uint32_t) height};
+    acture_extent.width      = std::clamp(acture_extent.width, capabilities.minImageExtent.width,
+                                          capabilities.maxImageExtent.width);
+    acture_extent.height     = std::clamp(acture_extent.height, capabilities.minImageExtent.height,
+                                          capabilities.maxImageExtent.height);
+    return acture_extent;
+}
+
+
+void Application::create_swap_chain()
+{
+    assert(physical_device != VK_NULL_HANDLE);
+    assert(logical_device != VK_NULL_HANDLE);
+    assert(surface != VK_NULL_HANDLE);
+
+    SwapChainSupportDetail swap_chain_detail = query_swap_chain_support(physical_device);
+    VkSurfaceFormatKHR surface_format = choose_swap_surface_format(swap_chain_detail.format_list);
+    VkPresentModeKHR present_mode = choose_swap_present_model(swap_chain_detail.present_mode_list);
+    swapchain_extent              = choose_swap_extent(swap_chain_detail.capabilities);
+    swapchain_iamge_format        = surface_format.format;
+
+    // vulkan 规定，minImageCount 至少是 1
+    // maxImageCount 为 0 时表示没有限制
+    // TODO 这个是否和双重缓冲有关？
+    uint32_t image_cnt = swap_chain_detail.capabilities.minImageCount + 1;
+    if (swap_chain_detail.capabilities.maxImageCount > 0 &&
+        image_cnt > swap_chain_detail.capabilities.maxImageCount)
+        image_cnt = swap_chain_detail.capabilities.maxImageCount;
+
+    VkSwapchainCreateInfoKHR create_info = {
+            .sType           = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .surface         = surface,
+            .minImageCount   = image_cnt,
+            .imageFormat     = surface_format.format,
+            .imageColorSpace = surface_format.colorSpace,
+            .imageExtent     = swapchain_extent,
+            // 有多少个 view，VR 需要多个，普通程序一个就够了
+            .imageArrayLayers = 1,
+            .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            // 对 swapchain 上的 image 做一些变换，currentTransform 意味着不用任何变换
+            .preTransform = swap_chain_detail.capabilities.currentTransform,
+            // 是否根据 alpha 与其他 window 进行混合
+            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            .presentMode    = present_mode,
+            .clipped        = VK_TRUE,    // 多个 windows 之间的颜色模糊
+
+            // 窗口 resize 的时候，之前的 swap chain 会失效，暂不考虑这种情况
+            .oldSwapchain = VK_NULL_HANDLE,
+    };
+
+    // 当 swap chain 位于 graphics queue family 时，才能对 image 进行绘图
+    // 当 swap chain 位于 present queue family 时，才能显示 image
+    // 如果 graphics queue family 和 present queue family 是两个不同的 queue family，就需要在
+    //  这两个 queue family 之间共享 image
+    QueueFamilyIndices indices                = find_queue_families(physical_device);
+    uint32_t           queue_family_indices[] = {indices.graphics_family.value(),
+                                                 indices.present_family.value()};
+    if (indices.graphics_family != indices.present_family)
+    {
+        create_info.imageSharingMode      = VK_SHARING_MODE_CONCURRENT,
+        create_info.queueFamilyIndexCount = 2;
+        create_info.pQueueFamilyIndices   = queue_family_indices;
+    } else
+    {
+        create_info.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE,
+        create_info.queueFamilyIndexCount = 0;
+        create_info.pQueueFamilyIndices   = nullptr;
+    }
+
+    if (vkCreateSwapchainKHR(logical_device, &create_info, nullptr, &swapchain) != VK_SUCCESS)
+        throw std::runtime_error("failed to create swap chain.");
+
+    // 获取 swap chain 里面的 image
+    vkGetSwapchainImagesKHR(logical_device, swapchain, &image_cnt, nullptr);
+    swapchain_image_list.resize(image_cnt);
+    vkGetSwapchainImagesKHR(logical_device, swapchain, &image_cnt, swapchain_image_list.data());
+}
+
+
+Application::SwapChainSupportDetail Application::query_swap_chain_support(VkPhysicalDevice device)
+{
+    assert(surface != VK_NULL_HANDLE);
+
+    SwapChainSupportDetail details;
+
+    // capabilities
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
+
+    // format
+    uint32_t format_cnt;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_cnt, nullptr);
+    if (format_cnt != 0)
+    {
+        details.format_list.resize(format_cnt);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_cnt,
+                                             details.format_list.data());
+    }
+
+    // presentation modes
+    uint32_t present_mode_cnt;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_cnt, nullptr);
+    if (present_mode_cnt != 0)
+    {
+        details.present_mode_list.resize(present_mode_cnt);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_cnt,
+                                                  details.present_mode_list.data());
+    }
+
+    return details;
+}
+
+
 void Application::init_window()
 {
     glfwInit();
@@ -40,14 +203,36 @@ void Application::init_window()
 }
 
 
+void Application::show_info()
+{
+    // vk instance 支持的 extension
+    {
+        /// 首先获取可用的 extension 数量
+        uint32_t ext_cnt = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &ext_cnt, nullptr);
+        // 查询 vk 能够支持的扩展的细节
+        std::vector<VkExtensionProperties> ext_list(ext_cnt);
+        vkEnumerateInstanceExtensionProperties(nullptr, &ext_cnt, ext_list.data());
+        // 打印出扩展
+        std::stringstream ss;
+        ss << "available instance extensions(" << ext_cnt << "): \n";
+        for (const auto &ext: ext_list)
+            ss << "\t" << ext.extensionName << "\n";
+        SPDLOG_INFO("{}", ss.str());
+    }
+}
+
+
 void Application::init_vulkan()
 {
     if (!check_validation_layer())
         throw std::runtime_error("validation layer required, but not available.");
     create_instance();
     setup_debug_messenger();
-    pick_gpu();
+    create_surface();
+    pick_physical_device();
     create_logical_device();
+    create_swap_chain();
 }
 
 
@@ -67,22 +252,6 @@ void Application::create_instance()
     // 所需的 vk 扩展
     std::vector<const char *> required_extensions = get_required_ext();
 
-    // vk 驱动支持的扩展
-    {
-        /// 首先获取可用的 extension 数量
-        uint32_t ext_cnt = 0;
-        vkEnumerateInstanceExtensionProperties(nullptr, &ext_cnt, nullptr);
-        // 查询 vk 能够支持的扩展的细节
-        std::vector<VkExtensionProperties> ext_list(ext_cnt);
-        vkEnumerateInstanceExtensionProperties(nullptr, &ext_cnt, ext_list.data());
-        // 打印出扩展
-        std::stringstream ss;
-        ss << "available extensions(" << ext_cnt << "): \n";
-        for (const auto &ext: ext_list)
-            ss << "\t" << ext.extensionName << "\n";
-        SPDLOG_INFO("{}", ss.str());
-    }
-
     // 这些数据用于指定当前应用程序需要的全局 extension 以及 validation layers
     VkInstanceCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -100,8 +269,8 @@ void Application::create_instance()
             .pApplicationInfo = &app_info,
 
             // layers
-            .enabledLayerCount   = (uint32_t) (needed_layer_list.size()),
-            .ppEnabledLayerNames = needed_layer_list.data(),
+            .enabledLayerCount   = (uint32_t) (instance_layer_list.size()),
+            .ppEnabledLayerNames = instance_layer_list.data(),
 
             // extensions
             .enabledExtensionCount   = (uint32_t) required_extensions.size(),
@@ -131,7 +300,7 @@ bool Application::check_validation_layer()
     SPDLOG_INFO("{}", log_ss.str());
 
     // 检查需要的 layer 是否受支持（笛卡尔积操作）
-    for (const char *layer_needed: needed_layer_list)
+    for (const char *layer_needed: instance_layer_list)
     {
         bool layer_found = false;
         for (const auto &layer_supported: supported_layer_list)
@@ -149,11 +318,22 @@ bool Application::check_validation_layer()
 }
 
 
+void Application::create_surface()
+{
+    assert(instance != VK_NULL_HANDLE);
+
+    // 调用 glfw 来创建 window surface，这样可以避免平台相关的细节
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
+        throw std::runtime_error("failed to create widnow surface by glfw.");
+}
+
+
 std::vector<const char *> Application::get_required_ext()
 {
     std::vector<const char *> ext_list;
 
-    // glfw 所需的 vk 扩展
+    /// glfw 所需的 vk 扩展，window interface 相关的扩展
+    /// VK_KHR_surface: 这个扩展可以暴露出 VkSurfaceKHR 对象，glfw 可以读取这个对象
     uint32_t     glfw_ext_cnt = 0;
     const char **glfw_ext_list;
     glfw_ext_list = glfwGetRequiredInstanceExtensions(&glfw_ext_cnt);
@@ -237,7 +417,10 @@ void Application::mainLoop()
 
 void Application::cleanup()
 {
+    vkDestroySwapchainKHR(logical_device, swapchain, nullptr);
     vkDestroyDevice(logical_device, nullptr);
+
+    vkDestroySurfaceKHR(instance, surface, nullptr);
 
     // vk debug messenger，需要在 instance 之前销毁
     auto vkDestroyDebugUtilsMessengerEXT =
@@ -255,7 +438,7 @@ void Application::cleanup()
 }
 
 
-void Application::pick_gpu()
+void Application::pick_physical_device()
 {
     // 这个函数需要在 instance 创建之后执行
     assert(instance != VK_NULL_HANDLE);
@@ -272,7 +455,7 @@ void Application::pick_gpu()
     // 检查 physical device 是否符合要求，只需要其中一块就够了
     for (const auto &device: device_list)
     {
-        if (is_gpu_suitable(device))
+        if (is_physical_device_suitable(device))
         {
             physical_device = device;
             break;
@@ -283,7 +466,23 @@ void Application::pick_gpu()
 }
 
 
-bool Application::is_gpu_suitable(VkPhysicalDevice device)
+bool Application::check_device_ext_support(VkPhysicalDevice device)
+{
+    // 获得设备的所有 extension
+    uint32_t ext_cnt;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &ext_cnt, nullptr);
+    std::vector<VkExtensionProperties> support_ext_list(ext_cnt);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &ext_cnt, support_ext_list.data());
+
+    // 判断设备是否支持所有的 extension
+    std::set<std::string> required_ext_list(device_ext_list.begin(), device_ext_list.end());
+    for (const auto &ext: support_ext_list)
+        required_ext_list.erase(ext.extensionName);
+    return required_ext_list.empty();
+}
+
+
+bool Application::is_physical_device_suitable(VkPhysicalDevice device)
 {
     // 检查 physical device 的 properties 和 feature
     VkPhysicalDeviceProperties device_properties;
@@ -312,23 +511,41 @@ bool Application::is_gpu_suitable(VkPhysicalDevice device)
         return false;
     SPDLOG_INFO("queue family is supported.");
 
+    // 检查 extension
+    if (!check_device_ext_support(device))
+        return false;
+
+    // 检查对 swap chain 的支持
+    SwapChainSupportDetail swap_chain_support = query_swap_chain_support(device);
+    if (swap_chain_support.format_list.empty() || swap_chain_support.present_mode_list.empty())
+        return false;
+
     return true;
 }
 
 
 Application::QueueFamilyIndices Application::find_queue_families(VkPhysicalDevice device)
 {
+    assert(surface != VK_NULL_HANDLE);
+
+    // physical device 的 queue family 的数量，以及每个 queue family 的 property
     uint32_t queue_family_cnt = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_cnt, nullptr);
-
     std::vector<VkQueueFamilyProperties> queue_family(queue_family_cnt);
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_cnt, queue_family.data());
 
     QueueFamilyIndices indices;
     for (int i = 0; i < queue_family_cnt; ++i)
     {
+        // 第 i 个 queue family 是否支持 graphics
         if (queue_family[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
             indices.graphics_family = i;
+
+        // 第 i 个 queue family 是否支持 present image to window surface
+        VkBool32 present_support = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &present_support);
+        if (present_support)
+            indices.present_family = i;
     }
 
     return indices;
@@ -337,37 +554,36 @@ Application::QueueFamilyIndices Application::find_queue_families(VkPhysicalDevic
 
 void Application::create_logical_device()
 {
-    // 创建 logical device 需要 physical device
-    assert(physical_device != VK_NULL_HANDLE);
+    assert(physical_device != VK_NULL_HANDLE);    // 创建 logical device 需要 physical device
 
     // 创建 queue 需要的信息
-    QueueFamilyIndices indices = find_queue_families(physical_device);
-    float queue_priority[]     = {1.0f};    // 每个队列的优先级，1.f 最高，0.f 最低
-    VkDeviceQueueCreateInfo queue_create_info = {
-            .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = indices.graphics_family.value(),
-            .queueCount       = 1,
-            .pQueuePriorities = queue_priority,    // 指定每个队列的优先级
-    };
+    QueueFamilyIndices                   indices = find_queue_families(physical_device);
+    std::vector<VkDeviceQueueCreateInfo> queue_create_info_list;
+    float queue_priority = 1.f;    // 每个队列的优先级，1.f 最高，0.f 最低
+    // 可能同一个 queue family 支持多种特性，因此用 set 去重
+    for (uint32_t queue_family:
+         std::set<uint32_t>{indices.graphics_family.value(), indices.present_family.value()})
+        queue_create_info_list.push_back({
+                .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = queue_family,
+                .queueCount       = 1,
+                .pQueuePriorities = &queue_priority,
+        });
 
     // locgical device 需要的 feature
     VkPhysicalDeviceFeatures device_feature{};
-    std::vector<const char*> device_ext_list = {
-            // 这是一个临时的扩展（vulkan_beta.h)，在 metal API 上模拟 vulkan 需要这个扩展
-        VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
-    };
 
     VkDeviceCreateInfo device_create_info = {
             .sType                = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .queueCreateInfoCount = 1,
-            .pQueueCreateInfos    = &queue_create_info,
+            .queueCreateInfoCount = (uint32_t) queue_create_info_list.size(),
+            .pQueueCreateInfos    = queue_create_info_list.data(),
 
             /// logical device 也需要有 validation layer
             /// 但是最新的实现已经不需要专门为 logical device 指定 validation layer 了
-            .enabledLayerCount   = (uint32_t) needed_layer_list.size(),
-            .ppEnabledLayerNames = needed_layer_list.data(),
+            .enabledLayerCount   = (uint32_t) instance_layer_list.size(),
+            .ppEnabledLayerNames = instance_layer_list.data(),
 
-            .enabledExtensionCount = (uint32_t) device_ext_list.size(),
+            .enabledExtensionCount   = (uint32_t) device_ext_list.size(),
             .ppEnabledExtensionNames = device_ext_list.data(),
 
             .pEnabledFeatures = &device_feature,    // 指定 logical device 的 features
@@ -382,4 +598,7 @@ void Application::create_logical_device()
     // 第三个参数表示该 queue family 中 queue 的 index，
     //  因为只创建了一个 graphics queue family 的 queue，因此 index = 0
     vkGetDeviceQueue(logical_device, indices.graphics_family.value(), 0, &graphics_queue);
+
+    // 如果同一个 queue family 既支持 graphics，又支持 present，那么 graphics_queue == present_queue
+    vkGetDeviceQueue(logical_device, indices.present_family.value(), 0, &present_queue);
 }
