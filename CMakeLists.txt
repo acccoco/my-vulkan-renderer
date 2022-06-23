@@ -22,6 +22,6 @@ find_package(Vulkan REQUIRED)
 find_package(spdlog REQUIRED)
 
 
-add_executable(VK main.cpp)
+add_executable(VK main.cpp )
 
 target_link_libraries(VK glfw glm::glm Vulkan::Vulkan spdlog::spdlog)

@@ -23,60 +23,49 @@
 void init_spdlog();
 
 
+struct PhysicalDeviceInfo {
+    VkPhysicalDeviceProperties properties;
+    VkPhysicalDeviceFeatures   features;
+
+    // queue family 相关的信息
+    std::vector<VkQueueFamilyProperties> queue_families;
+    std::optional<uint32_t>              graphics_queue_family_idx;
+    std::optional<uint32_t>              present_queue_family_idx;
+
+    // swapchain 相关的信息
+    VkSurfaceCapabilitiesKHR        capabilities;
+    std::vector<VkSurfaceFormatKHR> format_list;
+    std::vector<VkPresentModeKHR>   present_mode_list;    // TODO 三重缓冲，进一步了解
+
+    // extension
+    std::vector<VkExtensionProperties> support_ext_list;
+};
+
+
 class Application
 {
 public:
-    void run()
-    {
-        show_info();
-        init_window();
-        init_vulkan();
-        mainLoop();
-        cleanup();
-    }
+    void        run();
+    static void print_instance_info();
+    void        init_window();
+    void        init_vulkan();
+    void        mainLoop();
+    void        cleanup();
 
-    /**
-     * 显示 instance , device 的各种信息：支持的扩展，layers，feature 等
-     */
-    static void show_info();
 
 private:
-    // 窗口对象，需要手动释放资源
-    GLFWwindow    *window{};
-    const uint32_t WIDTH  = 800;
-    const uint32_t HEIGHT = 600;
-
-    // window surface，手动释放
-    VkSurfaceKHR surface;
-
-
-    // 整个应用程序的 vulkan instance，需要手动释放资源
-    VkInstance instance{VK_NULL_HANDLE};
-
-    // 需要用到的 layer
-    const std::vector<const char *> instance_layer_list = {
+    const std::vector<const char *> _instance_layer_list = {
             "VK_LAYER_KHRONOS_validation",    // validation layer
     };
 
-    // 注：const char* 是 static storage，生命周期是程序执行期
-    std::vector<const char *> device_ext_list = {
+    std::vector<const char *> _device_ext_list = {
             // 这是一个临时的扩展（vulkan_beta.h)，在 metal API 上模拟 vulkan 需要这个扩展
             VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
             // 可以将渲染结果呈现到 window surface 上
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
 
-    // debug messenger 的 handle，需要最后手动释放资源
-    VkDebugUtilsMessengerEXT debug_messenger;
-
-    // 物理设备的 handle，在销毁 instance 时会自动销毁，无需手动释放资源
-    VkPhysicalDevice physical_device{VK_NULL_HANDLE};
-
-    // logical device 的 handle，需要手动释放资源
-    VkDevice logical_device;
-
-    // debug messenger 相关的配置信息
-    VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info = {
+    VkDebugUtilsMessengerCreateInfoEXT _debug_messenger_create_info = {
             .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
             // 会触发 callback 的严重级别
             .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
@@ -90,99 +79,39 @@ private:
             .pUserData       = nullptr,
     };
 
-    // swapchain，手动销毁
-    VkSwapchainKHR swapchain;
+    GLFWwindow    *_window{};    // 手动释放
+    const uint32_t WIDTH  = 800;
+    const uint32_t HEIGHT = 600;
+    VkSurfaceKHR   _surface;    // 手动释放
 
-    // TODO 考虑 get_device_info 函数，返回 queue family，以及 swap chain，feature，properties 等信息
-    // 应用中需要用到的 queue family，以及他们在某个 physical device 中的 index
-    struct QueueFamilyIndices {
-        // 支持 VK_QUEUE_GRAPHICS_BIT 的 queue family
-        std::optional<uint32_t> graphics_family;
-        // 可以将 image present 到 window surface 的 queue family
-        std::optional<uint32_t> present_family;
+    VkInstance               _instance{VK_NULL_HANDLE};    // 手动释放
+    VkDebugUtilsMessengerEXT _debug_messenger;             // 手动释放
 
-        bool is_complete() { return graphics_family.has_value() && present_family.has_value(); }
-    };
+    VkPhysicalDevice   _physical_device{VK_NULL_HANDLE};    // 跟随 instance 销毁
+    PhysicalDeviceInfo _physical_device_info;
 
-    // 某个 physical device 对 swap chain 的支持
-    struct SwapChainSupportDetail {
-        VkSurfaceCapabilitiesKHR capabilities;
-        // R8G8B8A8, sRGB, ...
-        std::vector<VkSurfaceFormatKHR> format_list;
-        // 垂直同步，三重缓冲等相关，TODO：进一步了解
-        // https://vulkan-tutorial.com/en/Drawing_a_triangle/Presentation/Swap_chain
-        std::vector<VkPresentModeKHR> present_mode_list;
-    };
+    VkDevice _device;            // 手动释放
+    VkQueue  _graphics_queue;    // 跟随 device 销毁
+    VkQueue  _present_queue;     // 跟随 device 销毁
 
-    /**
-     * 在 physicla device 支持的 format 中选择最好的一个
-     */
-    VkSurfaceFormatKHR choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats);
+    VkSwapchainKHR           _swapchain;               // 手动释放
+    std::vector<VkImage>     _swapchain_image_list;    // 跟随 swapchain 销毁
+    VkFormat                 _swapchain_iamge_format;
+    VkExtent2D               _swapchain_extent;
+    std::vector<VkImageView> _swapchain_image_view_list;    // 手动释放
 
-    /**
-     * 在 physicla device 支持的 present mode 中选择最好的一个
-     * 优先选择三重缓冲(VK_PRESENT_MODE_MAILBOX_KHR)，次选垂直同步(VK_PRESENT_MODE_FIFO_KHR)
-     */
-    VkPresentModeKHR choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes);
+    VkSemaphore _image_available_semaphore;    // 用于 GPU 的同步
+    VkSemaphore _render_finished_semaphore;
+    VkFence     _in_flight_fence;    // 用于 CPU 的同步
 
-    /**
-     * 为 swap chain 选择合适的分辨率
-     */
-    VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilities );
+    VkCommandPool   _command_pool;
+    VkCommandBuffer _command_buffer;
 
-    /**
-     * 创建 swap chain
-     */
-    void create_swap_chain();
+    VkRenderPass               _render_pass;
+    VkPipelineLayout           _pipeline_layout;    // uniform 相关，手动释放资源
+    VkPipeline                 _graphics_pipeline;
+    std::vector<VkFramebuffer> _swapchain_framebuffer_list;
 
-    /**
-     * 查询 physical device 对 swap chain 相关信息的支持
-     */
-    SwapChainSupportDetail query_swap_chain_support(VkPhysicalDevice device);
-
-    // graphics command 相关的 queue 的 handle，跟随 logical device 销毁
-    VkQueue graphics_queue;
-
-    // present image to window surface 的 queue 的 handle，跟随 logical device 销毁
-    VkQueue present_queue;
-
-    // swap chain 里面的 image，跟随 swapchain 销毁
-    std::vector<VkImage> swapchain_image_list;
-
-    VkFormat swapchain_iamge_format;
-    VkExtent2D swapchain_extent;
-
-    /**
-     * 通过 glfw 来初始化 window
-     */
-    void init_window();
-
-    void init_vulkan();
-
-    /**
-     * 创建一个 vk 实例，这个实例将 vk 的库/驱动和这个应用连接在一起
-     */
-    void create_instance();
-
-    /**
-     * 检查需要用到的 validation layers 是否受支持
-     */
-    bool check_validation_layer();
-
-    /**
-     * 创建 window surface
-     */
-    void create_surface();
-
-    /**
-     * 获得当前应用所需的扩展
-     */
-    [[nodiscard]] static std::vector<const char *> get_required_ext();
-
-    /**
-     * 为 instance 设置用于 debug 的 messenger，只有开启了 validation layer 才能用这个
-     */
-    void setup_debug_messenger();
 
     /**
      * 用于 debug 的回调函数
@@ -197,34 +126,35 @@ private:
                    VkDebugUtilsMessageTypeFlagsEXT             message_type,
                    const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data);
 
-    /**
-     * 选择一个 physical device 来使用
-     */
-    void pick_physical_device();
+    void                             create_surface();
+    void                             create_instance();
+    static std::vector<const char *> get_required_ext();
+    bool                             check_instance_layers();
+    void                             setup_debug_messenger();
 
-    /**
-     * 检查 physical device 是否支持指定的扩展
-     * @return
-     */
-    bool check_device_ext_support(VkPhysicalDevice device);
+    void               pick_physical_device();
+    bool               is_physical_device_suitable(const PhysicalDeviceInfo &physical_device_info);
+    static void        print_physical_device_info(const PhysicalDeviceInfo &physical_device_info);
+    bool               check_physical_device_ext(const PhysicalDeviceInfo &physical_device_info);
+    PhysicalDeviceInfo get_physical_device_info(VkPhysicalDevice physical_device);
+    void               create_logical_device();
 
-    /**
-     * 检查一个 physical device 释放适合当前应用
-     * 会检查 device 支持的 feature，检查其支持的 queue family
-     */
-    bool is_physical_device_suitable(VkPhysicalDevice device);
+    // swapchain, image views
+    VkSurfaceFormatKHR choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats);
+    VkPresentModeKHR choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes);
+    VkExtent2D       choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities);
+    void             create_swap_chain();
+    void             create_image_views();
 
-    /**
-     * 找到 physical device 支持的 queue families
-     * 不同的 queue families 支持不同类型的 command
-     * 例如：一些只支持 compute command，另一些只支持 transfer command
-     * @return 某个 queue family 在 device 的 queue family 列表的 index
-     */
-    QueueFamilyIndices find_queue_families(VkPhysicalDevice device);
+    // pipeline
+    void create_render_pass();
+    void create_piplie();
 
-    void create_logical_device();
-
-    void mainLoop();
-
-    void cleanup();
+    // draw
+    void create_framebuffers();
+    void create_command_pool();
+    void create_command_buffer();
+    void create_sync_objects();
+    void record_command_buffer(VkCommandBuffer buffer, uint32_t image_idx);
+    void draw_frame();
 };
