@@ -25,17 +25,16 @@ void init_spdlog();
 
 struct PhysicalDeviceInfo {
     VkPhysicalDeviceProperties properties;
-    VkPhysicalDeviceFeatures   features;
+    VkPhysicalDeviceFeatures features;
 
-    // queue family 相关的信息
     std::vector<VkQueueFamilyProperties> queue_families;
-    std::optional<uint32_t>              graphics_queue_family_idx;
-    std::optional<uint32_t>              present_queue_family_idx;
+    std::optional<uint32_t> graphics_queue_family_idx;
+    std::optional<uint32_t> present_queue_family_idx;
 
-    // swapchain 相关的信息
-    VkSurfaceCapabilitiesKHR        capabilities;
-    std::vector<VkSurfaceFormatKHR> format_list;
-    std::vector<VkPresentModeKHR>   present_mode_list;    // TODO 三重缓冲，进一步了解
+    // device 支持的，用于创建 swapchain 的 surface 的信息
+    VkSurfaceCapabilitiesKHR device_surface_capabilities;
+    std::vector<VkSurfaceFormatKHR> device_surface_format_list;
+    std::vector<VkPresentModeKHR> device_surface_present_mode;
 
     // extension
     std::vector<VkExtensionProperties> support_ext_list;
@@ -45,12 +44,12 @@ struct PhysicalDeviceInfo {
 class Application
 {
 public:
-    void        run();
+    void run();
     static void print_instance_info();
-    void        init_window();
-    void        init_vulkan();
-    void        mainLoop();
-    void        cleanup();
+    void init_window();
+    void init_vulkan();
+    void mainLoop();
+    void cleanup();
 
 
 private:
@@ -79,37 +78,37 @@ private:
             .pUserData       = nullptr,
     };
 
-    GLFWwindow    *_window{};    // 手动释放
+    GLFWwindow *_window{};    // 手动释放
     const uint32_t WIDTH  = 800;
     const uint32_t HEIGHT = 600;
-    VkSurfaceKHR   _surface;    // 手动释放
+    VkSurfaceKHR _surface;    // 手动释放
 
-    VkInstance               _instance{VK_NULL_HANDLE};    // 手动释放
-    VkDebugUtilsMessengerEXT _debug_messenger;             // 手动释放
+    VkInstance _instance{VK_NULL_HANDLE};         // 手动释放
+    VkDebugUtilsMessengerEXT _debug_messenger;    // 手动释放
 
-    VkPhysicalDevice   _physical_device{VK_NULL_HANDLE};    // 跟随 instance 销毁
+    VkPhysicalDevice _physical_device{VK_NULL_HANDLE};    // 跟随 instance 销毁
     PhysicalDeviceInfo _physical_device_info;
 
-    VkDevice _device;            // 手动释放
-    VkQueue  _graphics_queue;    // 跟随 device 销毁
-    VkQueue  _present_queue;     // 跟随 device 销毁
+    VkDevice _device;           // 手动释放
+    VkQueue _graphics_queue;    // 跟随 device 销毁
+    VkQueue _present_queue;     // 跟随 device 销毁
 
-    VkSwapchainKHR           _swapchain;               // 手动释放
-    std::vector<VkImage>     _swapchain_image_list;    // 跟随 swapchain 销毁
-    VkFormat                 _swapchain_iamge_format;
-    VkExtent2D               _swapchain_extent;
+    VkSwapchainKHR _swapchain;                     // 手动释放
+    std::vector<VkImage> _swapchain_image_list;    // 跟随 swapchain 销毁
+    VkFormat _swapchain_iamge_format;
+    VkExtent2D _swapchain_extent;
     std::vector<VkImageView> _swapchain_image_view_list;    // 手动释放
 
     VkSemaphore _image_available_semaphore;    // 用于 GPU 的同步
     VkSemaphore _render_finished_semaphore;
-    VkFence     _in_flight_fence;    // 用于 CPU 的同步
+    VkFence _in_flight_fence;    // 用于 CPU 的同步
 
-    VkCommandPool   _command_pool;
+    VkCommandPool _command_pool;
     VkCommandBuffer _command_buffer;
 
-    VkRenderPass               _render_pass;
-    VkPipelineLayout           _pipeline_layout;    // uniform 相关，手动释放资源
-    VkPipeline                 _graphics_pipeline;
+    VkRenderPass _render_pass;
+    VkPipelineLayout _pipeline_layout;    // uniform 相关，手动释放资源
+    VkPipeline _graphics_pipeline;
     std::vector<VkFramebuffer> _swapchain_framebuffer_list;
 
 
@@ -122,29 +121,31 @@ private:
      * @return 是否应该 abort
      */
     static VKAPI_ATTR VkBool32 VKAPI_CALL
-    debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
-                   VkDebugUtilsMessageTypeFlagsEXT             message_type,
+    debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+                   VkDebugUtilsMessageTypeFlagsEXT message_type,
                    const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data);
 
-    void                             create_surface();
-    void                             create_instance();
+    void create_surface();
+    void create_instance();
     static std::vector<const char *> get_required_ext();
-    bool                             check_instance_layers();
-    void                             setup_debug_messenger();
+    bool check_instance_layers();
+    void setup_debug_messenger();
 
-    void               pick_physical_device();
-    bool               is_physical_device_suitable(const PhysicalDeviceInfo &physical_device_info);
-    static void        print_physical_device_info(const PhysicalDeviceInfo &physical_device_info);
-    bool               check_physical_device_ext(const PhysicalDeviceInfo &physical_device_info);
+    void pick_physical_device();
+    bool is_physical_device_suitable(const PhysicalDeviceInfo &physical_device_info);
+    static void print_physical_device_info(const PhysicalDeviceInfo &physical_device_info);
+    bool check_physical_device_ext(const PhysicalDeviceInfo &physical_device_info);
     PhysicalDeviceInfo get_physical_device_info(VkPhysicalDevice physical_device);
-    void               create_logical_device();
+    void create_logical_device();
 
     // swapchain, image views
-    VkSurfaceFormatKHR choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats);
-    VkPresentModeKHR choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes);
-    VkExtent2D       choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities);
-    void             create_swap_chain();
-    void             create_image_views();
+    static VkSurfaceFormatKHR
+    choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats);
+    static VkPresentModeKHR
+    choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes);
+    VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities);
+    void create_swap_chain();
+    void create_image_views();
 
     // pipeline
     void create_render_pass();

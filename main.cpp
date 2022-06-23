@@ -93,50 +93,52 @@ VkExtent2D Application::choose_swap_extent(const VkSurfaceCapabilitiesKHR &capab
 
 void Application::create_swap_chain()
 {
-    assert(_physical_device != VK_NULL_HANDLE);
-    assert(_device != VK_NULL_HANDLE);
-    assert(_surface != VK_NULL_HANDLE);
-
     VkSurfaceFormatKHR surface_format =
-            choose_swap_surface_format(_physical_device_info.format_list);
+            choose_swap_surface_format(_physical_device_info.device_surface_format_list);
     VkPresentModeKHR present_mode =
-            choose_swap_present_model(_physical_device_info.present_mode_list);
-    _swapchain_extent       = choose_swap_extent(_physical_device_info.capabilities);
+            choose_swap_present_model(_physical_device_info.device_surface_present_mode);
+    _swapchain_extent       = choose_swap_extent(_physical_device_info.device_surface_capabilities);
     _swapchain_iamge_format = surface_format.format;
 
-    // vulkan 规定，minImageCount 至少是 1
-    // maxImageCount 为 0 时表示没有限制
-    // TODO 这个是否和双重缓冲有关？
-    uint32_t image_cnt = _physical_device_info.capabilities.minImageCount + 1;
-    if (_physical_device_info.capabilities.maxImageCount > 0 &&
-        image_cnt > _physical_device_info.capabilities.maxImageCount)
-        image_cnt = _physical_device_info.capabilities.maxImageCount;
+    /// vulkan 规定，minImageCount 至少是 1
+    /// maxImageCount 为 0 时表示没有限制
+    uint32_t image_cnt = _physical_device_info.device_surface_capabilities.minImageCount + 1;
+    if (_physical_device_info.device_surface_capabilities.maxImageCount > 0 &&
+        image_cnt > _physical_device_info.device_surface_capabilities.maxImageCount)
+        image_cnt = _physical_device_info.device_surface_capabilities.maxImageCount;
 
     VkSwapchainCreateInfoKHR create_info = {
             .sType           = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            .surface         = _surface,
-            .minImageCount   = image_cnt,
+            .surface         = _surface,     // to present image on
+            .minImageCount   = image_cnt,    // may create more presentable images
             .imageFormat     = surface_format.format,
             .imageColorSpace = surface_format.colorSpace,
-            .imageExtent     = _swapchain_extent,
-            // 有多少个 view，VR 需要多个，普通程序一个就够了
+            .imageExtent     = _swapchain_extent,    // image extent, size in pixel
+
+            // number of views, for non-stereoscopic app, it is 1
             .imageArrayLayers = 1,
-            .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            // 对 swapchain 上的 image 做一些变换，currentTransform 意味着不用任何变换
-            .preTransform = _physical_device_info.capabilities.currentTransform,
-            // 是否根据 alpha 与其他 window 进行混合
+
+            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+
+            // 是否需要在 present 前对 image 做一些变换，currentTransform 意味着不用任何变换
+            .preTransform = _physical_device_info.device_surface_capabilities.currentTransform,
+
+            // 如果一个 window 中有多个 surface，是否根据 alpha 值与其他 surface 进行复合
             .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-            .presentMode    = present_mode,
-            .clipped        = VK_TRUE,    // 多个 windows 之间的颜色模糊
+
+            .presentMode = present_mode,    // eg. 三缓
+            .clipped = VK_TRUE,    // 是否丢弃 surface 不可见区域的渲染操作，可提升性能
 
             // 窗口 resize 的时候，之前的 swap chain 会失效，暂不考虑这种情况
             .oldSwapchain = VK_NULL_HANDLE,
     };
 
-    // 当 swap chain 位于 graphics queue family 时，才能对 image 进行绘图
-    // 当 swap chain 位于 present queue family 时，才能显示 image
-    // 如果 graphics queue family 和 present queue family 是两个不同的 queue family，就需要在
-    //  这两个 queue family 之间共享 image
+    /// queueFamilyIndexCount 表示有多少个 queue family 会访问 swapchain 的 images
+    /// CONCURRENT 表示 image 可以被多个 queue family 访问，性能相对会低一些
+    /// EXCLUSIVE 表示 image 只会被一个 queue family 访问
+    /// image 位于 graphics queue family 时，可以进行绘图
+    /// image 位于 present queue family 时，可以进行显示
+    /// graphics 和 present 可能是同一个 queue family，这时就不需要进行 share 了
     uint32_t queue_family_indices[] = {_physical_device_info.graphics_queue_family_idx.value(),
                                        _physical_device_info.present_queue_family_idx.value()};
     if (_physical_device_info.graphics_queue_family_idx !=
@@ -155,7 +157,7 @@ void Application::create_swap_chain()
     if (vkCreateSwapchainKHR(_device, &create_info, nullptr, &_swapchain) != VK_SUCCESS)
         throw std::runtime_error("failed to create swap chain.");
 
-    // 获取 swap chain 里面的 image
+    // 获取 swap chain 里面的 image，因为 swapchain 可能会创建更多的 image，所以需要重新查询数量
     vkGetSwapchainImagesKHR(_device, _swapchain, &image_cnt, nullptr);
     _swapchain_image_list.resize(image_cnt);
     vkGetSwapchainImagesKHR(_device, _swapchain, &image_cnt, _swapchain_image_list.data());
@@ -220,9 +222,11 @@ void Application::create_piplie()
 
     // 如何从顶点索引得到图元
     VkPipelineInputAssemblyStateCreateInfo input_assembly_create_info = {
-            .sType =
-                    VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,    // 每三个顶点组成一个三角形，不重用顶点
+            // 每三个顶点组成一个三角形，不重用顶点
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+
             .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+
             // 是否允许值为 0xFFFF 或 0xFFFFFFFF 索引来分解三角形
             .primitiveRestartEnable = VK_FALSE,
     };
@@ -295,11 +299,11 @@ void Application::create_piplie()
 
     // 深度测试和模版测试：暂不需要
 
-    // 为每个 framebuffer 指定 color blend 方法
-    // 混合方法如下：https://vulkan-tutorial.com/en/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
-    // final_color.rgb = (new_color.rgb * src_blend_factor) <op> (old_color.rgb * dst_blend_factor)
-    // final_color.a = (new_color.a * src_alpha_factor) <op> (old_color.a * dst_alpha_factor)
-    // final_color = final_color & color_write_mask
+    /// 分别为每个 color attachment 指定 blend 设置
+    /// 混合方法如下：https://vulkan-tutorial.com/en/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
+    /// final_color.rgb = (new_color.rgb * src_blend_factor) <op> (old_color.rgb * dst_blend_factor)
+    /// final_color.a = (new_color.a * src_alpha_factor) <op> (old_color.a * dst_alpha_factor)
+    /// final_color = final_color & color_write_mask
     VkPipelineColorBlendAttachmentState color_blend_attachment = {
             .blendEnable = VK_FALSE,    // blend 的开关
 
@@ -421,11 +425,13 @@ void Application::create_image_views()
                 .image    = _swapchain_image_list[i],
                 .viewType = VK_IMAGE_VIEW_TYPE_2D,
                 .format   = _swapchain_iamge_format,
+
                 // 每个通道的映射方式：例如可以将 alpha 通道映射为一个常数
-                .components       = {.r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                                     .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                                     .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                                     .a = VK_COMPONENT_SWIZZLE_IDENTITY},
+                .components = {.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                               .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                               .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                               .a = VK_COMPONENT_SWIZZLE_IDENTITY},
+
                 .subresourceRange = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
                                      .baseMipLevel   = 0,
                                      .levelCount     = 1,
@@ -618,7 +624,7 @@ std::vector<const char *> Application::get_required_ext()
 
     /// glfw 所需的 vk 扩展，window interface 相关的扩展
     /// VK_KHR_surface: 这个扩展可以暴露出 VkSurfaceKHR 对象，glfw 可以读取这个对象
-    uint32_t     glfw_ext_cnt = 0;
+    uint32_t glfw_ext_cnt = 0;
     const char **glfw_ext_list;
     glfw_ext_list = glfwGetRequiredInstanceExtensions(&glfw_ext_cnt);
     for (int i = 0; i < glfw_ext_cnt; ++i)
@@ -660,8 +666,8 @@ void Application::setup_debug_messenger()
 }
 
 
-VkBool32 Application::debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
-                                     VkDebugUtilsMessageTypeFlagsEXT             message_type,
+VkBool32 Application::debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+                                     VkDebugUtilsMessageTypeFlagsEXT message_type,
                                      const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
                                      void *)
 {
@@ -815,25 +821,25 @@ void Application::pick_physical_device()
     vkEnumeratePhysicalDevices(_instance, &device_cnt, nullptr);
     if (device_cnt == 0)
         throw std::runtime_error("no physical device found with vulkan support.");
-    std::vector<VkPhysicalDevice> device_list(device_cnt);
-    vkEnumeratePhysicalDevices(_instance, &device_cnt, device_list.data());
+    std::vector<VkPhysicalDevice> physical_device_list(device_cnt);
+    vkEnumeratePhysicalDevices(_instance, &device_cnt, physical_device_list.data());
 
     // 获得每个 physical device 的信息，并打印出来
-    std::vector<PhysicalDeviceInfo> device_info_list;
-    for (const auto &device_: device_list)
+    std::vector<PhysicalDeviceInfo> physical_device_info_list;
+    for (const auto &device_: physical_device_list)
     {
         PhysicalDeviceInfo info = get_physical_device_info(device_);
         print_physical_device_info(info);
-        device_info_list.push_back(info);
+        physical_device_info_list.push_back(info);
     }
 
     // 检查 physical device 是否符合要求，只需要其中一块就够了
     for (int i = 0; i < device_cnt; ++i)
     {
-        if (is_physical_device_suitable(device_info_list[i]))
+        if (is_physical_device_suitable(physical_device_info_list[i]))
         {
-            _physical_device      = device_list[i];
-            _physical_device_info = device_info_list[i];
+            _physical_device      = physical_device_list[i];
+            _physical_device_info = physical_device_info_list[i];
             break;
         }
     }
@@ -868,7 +874,8 @@ bool Application::is_physical_device_suitable(const PhysicalDeviceInfo &physical
         return false;
 
     // 检查对 swap chain 的支持
-    if (physical_device_info.format_list.empty() || physical_device_info.present_mode_list.empty())
+    if (physical_device_info.device_surface_format_list.empty() ||
+        physical_device_info.device_surface_present_mode.empty())
         return false;
 
     return true;
@@ -882,20 +889,25 @@ void Application::create_render_pass()
     VkAttachmentDescription color_attachment = {
             .format  = _swapchain_iamge_format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
-            // 在渲染前后要对 color attachment 做什么
-            .loadOp  = VK_ATTACHMENT_LOAD_OP_CLEAR,
+
+            // 发生在第一次访问 color/depth attchment 之前
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+
+            // 发生在最后一次访问 color/depth attachment 之后
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            // 在渲染前后要对 stencil 做什么
+
+            // 在 subpass 前后要对 stencil 做什么，这里是 color attachment，所以不需要
             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            // 图像是用来干什么的，以便优化
+
+            // 在 renderpass 开始和结束的时候应该对图像使用什么 layout
             .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .finalLayout   = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,    // 用于 swapchain
     };
 
     // subpass 引用 color attachment
     VkAttachmentReference color_attachment_ref = {
-            .attachment = 0,
+            .attachment = 0,    // index in render pass
             .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
 
@@ -906,7 +918,10 @@ void Application::create_render_pass()
             .pColorAttachments    = &color_attachment_ref,
     };
 
+    /// dst subpass 依赖于 src subpass
+    /// 非常好的解答：https://www.reddit.com/r/vulkan/comments/s80reu/subpass_dependencies_what_are_those_and_why_do_i/
     VkSubpassDependency dependency = {
+            /// VK_SUBPASS_EXTERNAL 表示 dst subpass 依赖于 之前的 renderpass 中的所有 subpass
             .srcSubpass    = VK_SUBPASS_EXTERNAL,
             .dstSubpass    = 0,
             .srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -989,6 +1004,8 @@ void Application::draw_frame()
     vkResetFences(_device, 1, &_in_flight_fence);
 
     uint32_t image_idx;
+    /// 向 swapchain 请求一个 presentable 的 image，可能此时 presentation engine 正在读这个 image。
+    /// 在 presentation engine 读完 image 后，它会把 semaphore 设为 signaled
     vkAcquireNextImageKHR(_device, _swapchain, UINT64_MAX, _image_available_semaphore,
                           VK_NULL_HANDLE, &image_idx);
 
@@ -1002,7 +1019,8 @@ void Application::draw_frame()
 
     VkSubmitInfo submit_info = {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            // 在 pipeline 的哪个 stage 进行等待，等待哪些 semaphores
+
+            // 在写 color attachment 的阶段等待 semaphore，semaphore 表示 image 可用（可以写入）
             .waitSemaphoreCount = 1,
             .pWaitSemaphores    = wait_semaphores,
             .pWaitDstStageMask  = wait_stages,
@@ -1019,7 +1037,7 @@ void Application::draw_frame()
         throw std::runtime_error("failed to submit draw command buffer!");
 
 
-    VkSwapchainKHR   swapchains[] = {_swapchain};
+    VkSwapchainKHR swapchains[]   = {_swapchain};
     VkPresentInfoKHR present_info = {
             .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
@@ -1060,23 +1078,24 @@ PhysicalDeviceInfo Application::get_physical_device_info(VkPhysicalDevice physic
     }
 
     // swapchain
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _surface, &info.capabilities);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _surface,
+                                              &info.device_surface_capabilities);
     uint32_t format_cnt = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, _surface, &format_cnt, nullptr);
     if (format_cnt != 0)
     {
-        info.format_list.resize(format_cnt);
+        info.device_surface_format_list.resize(format_cnt);
         vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, _surface, &format_cnt,
-                                             info.format_list.data());
+                                             info.device_surface_format_list.data());
     }
     uint32_t present_mode_cnt;
     vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _surface, &present_mode_cnt,
                                               nullptr);
     if (present_mode_cnt != 0)
     {
-        info.present_mode_list.resize(present_mode_cnt);
+        info.device_surface_present_mode.resize(present_mode_cnt);
         vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _surface, &present_mode_cnt,
-                                                  info.present_mode_list.data());
+                                                  info.device_surface_present_mode.data());
     }
 
     // extensions

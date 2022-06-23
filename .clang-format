@@ -7,7 +7,7 @@ AccessModifierOffset: -4
 SortIncludes: Never
 AlignAfterOpenBracket: Align
 AlignConsecutiveAssignments: Consecutive
-AlignConsecutiveDeclarations: Consecutive
+AlignConsecutiveDeclarations: None
 
 AlignOperands: Align
 AllowAllArgumentsOnNextLine: false
