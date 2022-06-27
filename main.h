@@ -6,6 +6,7 @@
 */
 
 #pragma once
+#include <array>
 #include <vector>
 #include <cstdlib>
 #include <optional>
@@ -29,6 +30,7 @@ void init_spdlog();
 struct PhysicalDeviceInfo {
     VkPhysicalDeviceProperties properties;
     VkPhysicalDeviceFeatures features;
+    VkPhysicalDeviceMemoryProperties memory_properties;
 
     std::vector<VkQueueFamilyProperties> queue_families;
     std::optional<uint32_t> graphics_queue_family_idx;
@@ -41,6 +43,52 @@ struct PhysicalDeviceInfo {
 
     // extension
     std::vector<VkExtensionProperties> support_ext_list;
+};
+
+
+struct Vertex {
+    glm::vec2 position;
+    glm::vec3 color;
+
+    static VkVertexInputBindingDescription get_binding_description()
+    {
+        return VkVertexInputBindingDescription{
+                /// 对应 binding array 的索引。
+                /// 因为只用了一个数组为 VAO 填充数据，因此 binding array 长度为 1，需要的索引就是0
+                .binding = 0,
+                .stride  = sizeof(Vertex),
+                // 是实例化的数据还是只是顶点数据
+                .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+    }
+
+    /**
+     * 第一个属性是 position，第二个属性是 color
+     */
+    static std::array<VkVertexInputAttributeDescription, 2> get_attribute_descripions()
+    {
+        return {
+                VkVertexInputAttributeDescription{
+                        .location = 0,    // 就是 shader 中 in(location=0)
+                        .binding  = 0,    // VAO 数据数组的第几个
+                        .format   = VK_FORMAT_R32G32_SFLOAT,
+                        .offset   = offsetof(Vertex, position),
+                },
+                VkVertexInputAttributeDescription{
+                        .location = 1,
+                        .binding  = 0,
+                        .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                        .offset   = offsetof(Vertex, color),
+                },
+        };
+    }
+};
+
+// 三角形的顶点数据
+const std::vector<Vertex> vertices = {
+        {{0.0f, -0.9f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
 };
 
 
@@ -115,6 +163,8 @@ private:
     std::vector<FrameSynchroData> _frames;
     uint32_t _current_frame_idx = 0;    // 当前正在绘制哪一帧
 
+    VkBuffer _vertex_buffer;
+    VkDeviceMemory _vertex_buffer_memory;
     VkCommandPool _command_pool;
     VkRenderPass _render_pass;
     VkPipelineLayout _pipeline_layout;    // uniform 相关，手动释放资源
@@ -149,13 +199,15 @@ private:
 
     // pipeline
     void create_render_pass();
-    void create_piplie();
+    void create_pipeline();
 
     // draw
+    void create_vertex_buffer();
+    VkDeviceMemory alloc_buffer_memory(VkBuffer buffer, VkMemoryPropertyFlags properties);
     void create_frame_synchro_data();
     void create_framebuffers();
     void create_command_pool();
-    void record_command_buffer(VkCommandBuffer buffer, uint32_t image_idx);
+    void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_idx);
     void draw_frame();
 
 

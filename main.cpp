@@ -164,7 +164,7 @@ void Application::create_swap_chain()
 }
 
 
-void Application::create_piplie()
+void Application::create_pipeline()
 {
     assert(_device != VK_NULL_HANDLE);
     assert(_render_pass != VK_NULL_HANDLE);
@@ -210,14 +210,16 @@ void Application::create_piplie()
     };
 
     // 顶点输入信息
+    auto vertex_binding_description   = Vertex::get_binding_description();
+    auto vertex_attribute_description = Vertex::get_attribute_descripions();
     VkPipelineVertexInputStateCreateInfo vertex_input_create_info = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
             // 指定顶点数据的信息
-            .vertexBindingDescriptionCount = 0,
-            .pVertexBindingDescriptions    = nullptr,
+            .vertexBindingDescriptionCount = 1,
+            .pVertexBindingDescriptions    = &vertex_binding_description,
             // 指定顶点属性的信息
-            .vertexAttributeDescriptionCount = 0,
-            .pVertexAttributeDescriptions    = nullptr,
+            .vertexAttributeDescriptionCount = (uint32_t) vertex_attribute_description.size(),
+            .pVertexAttributeDescriptions    = vertex_attribute_description.data(),
     };
 
     // 如何从顶点索引得到图元
@@ -505,8 +507,9 @@ void Application::init_vulkan()
     create_swap_chain();
     create_image_views();
     create_render_pass();
-    create_piplie();
+    create_pipeline();
     create_framebuffers();
+    create_vertex_buffer();
     create_command_pool();
     create_frame_synchro_data();
 }
@@ -695,14 +698,14 @@ void Application::mainLoop()
 }
 
 
-void Application::record_command_buffer(VkCommandBuffer buffer, uint32_t image_idx)
+void Application::record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_idx)
 {
     VkCommandBufferBeginInfo command_buffer_begin_info = {
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags            = 0,
             .pInheritanceInfo = nullptr,
     };
-    if (vkBeginCommandBuffer(buffer, &command_buffer_begin_info) != VK_SUCCESS)
+    if (vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info) != VK_SUCCESS)
         throw std::runtime_error("failed to begin command buffer.");
 
     VkClearValue clear_color = {.color = {.float32{0.0f, 0.0f, 0.0f, 1.0f}}};
@@ -716,12 +719,18 @@ void Application::record_command_buffer(VkCommandBuffer buffer, uint32_t image_i
             .pClearValues    = &clear_color,
     };
 
-    vkCmdBeginRenderPass(buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _graphics_pipeline);
-    // vertexCount, instanceCount, firstVertex, firstInstance
-    vkCmdDraw(buffer, 3, 1, 0, 0);
-    vkCmdEndRenderPass(buffer);
-    if (vkEndCommandBuffer(buffer) != VK_SUCCESS)
+    vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _graphics_pipeline);
+
+    VkBuffer buffers[]     = {_vertex_buffer};
+    VkDeviceSize offsets[] = {0};
+    // params: commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets
+    vkCmdBindVertexBuffers(command_buffer, 0, 1, buffers, offsets);
+
+    // params: vertexCount, instanceCount, firstVertex, firstInstance
+    vkCmdDraw(command_buffer, (uint32_t) vertices.size(), 1, 0, 0);
+    vkCmdEndRenderPass(command_buffer);
+    if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS)
         throw std::runtime_error("failed to end command buffer.");
 }
 
@@ -752,6 +761,9 @@ void Application::cleanup()
     vkDestroyCommandPool(_device, _command_pool, nullptr);
 
     clean_swapchain();
+
+    vkDestroyBuffer(_device, _vertex_buffer, nullptr);
+    vkFreeMemory(_device, _vertex_buffer_memory, nullptr);
 
     vkDestroyDevice(_device, nullptr);
     vkDestroySurfaceKHR(_instance, _surface, nullptr);
@@ -1091,6 +1103,9 @@ PhysicalDeviceInfo Application::get_physical_device_info(VkPhysicalDevice physic
     vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_cnt,
                                          info.support_ext_list.data());
 
+    // memory properties
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &info.memory_properties);
+
     return info;
 }
 
@@ -1191,7 +1206,7 @@ void Application::recreate_swapchain()
     create_swap_chain();
     create_image_views();
     create_render_pass();
-    create_piplie();
+    create_pipeline();
     create_framebuffers();
 }
 
@@ -1210,4 +1225,71 @@ void Application::clean_swapchain()
         vkDestroyImageView(_device, image_view, nullptr);
 
     vkDestroySwapchainKHR(_device, _swapchain, nullptr);
+}
+
+
+void Application::create_vertex_buffer()
+{
+    VkBufferCreateInfo create_info = {
+            .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size        = sizeof(vertices[0]) * vertices.size(),
+            .usage       = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,    // 仅在 graphics queue family 访问
+    };
+
+    if (vkCreateBuffer(_device, &create_info, nullptr, &_vertex_buffer) != VK_SUCCESS)
+        throw std::runtime_error("failed to create vertex buffer.");
+
+    // VK_MEMORY_PROPERTY_HOST_COHERENT_BIT 可以确保内存可以被立刻写入 GPU 的缓冲区
+    _vertex_buffer_memory =
+            alloc_buffer_memory(_vertex_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    vkBindBufferMemory(_device, _vertex_buffer, _vertex_buffer_memory, 0);
+
+    // 将顶点数据写入 vertex buffer memory
+    void *data;
+    vkMapMemory(_device, _vertex_buffer_memory, 0, create_info.size, 0, &data);
+    memcpy(data, vertices.data(), (size_t) create_info.size);
+    vkUnmapMemory(_device, _vertex_buffer_memory);
+}
+
+
+VkDeviceMemory Application::alloc_buffer_memory(VkBuffer buffer, VkMemoryPropertyFlags properties)
+{
+    assert(_device != VK_NULL_HANDLE);
+    assert(_physical_device != VK_NULL_HANDLE);
+
+    /// 获得 buffer 所需的内存类型
+    /// 当 physical memory properties 的第 i 种 type 被 buffer 接受时
+    /// memoryTypeBits 的第 i 位才是 1
+    VkMemoryRequirements mem_require;
+    vkGetBufferMemoryRequirements(_device, buffer, &mem_require);
+
+    // 检查是否有合适的内存类型
+    std::optional<uint32_t> memory_type_idx;
+    for (uint32_t i = 0; i < _physical_device_info.memory_properties.memoryTypeCount; ++i)
+    {
+        if (mem_require.memoryTypeBits & (1 << i) &&
+            (_physical_device_info.memory_properties.memoryTypes[i].propertyFlags & properties) ==
+                    properties)
+        {
+            memory_type_idx = i;
+            break;
+        }
+    }
+    if (!memory_type_idx.has_value())
+        throw std::runtime_error("no proper memory type for buffer, failed to allocate buffer.");
+
+    // 分配内存
+    VkMemoryAllocateInfo info = {
+            .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize  = mem_require.size,
+            .memoryTypeIndex = memory_type_idx.value(),
+    };
+
+    VkDeviceMemory memory;
+    if (vkAllocateMemory(_device, &info, nullptr, &memory) != VK_SUCCESS)
+        throw std::runtime_error("fail to allocate vertex buffer.");
+
+    return memory;
 }
