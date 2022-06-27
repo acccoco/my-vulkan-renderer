@@ -460,9 +460,16 @@ void Application::init_window()
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     _window = glfwCreateWindow((int) WIDTH, (int) HEIGHT, "Vulkan", nullptr, nullptr);
+
+    // 设置窗口大小改变的 callback
+    glfwSetWindowUserPointer(_window, this);
+    glfwSetFramebufferSizeCallback(_window, [](GLFWwindow *window, int width, int height) {
+        auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
+        app->_framebuffer_resized = true;
+    });
 }
 
 
@@ -501,28 +508,7 @@ void Application::init_vulkan()
     create_piplie();
     create_framebuffers();
     create_command_pool();
-    create_command_buffer();
-    create_sync_objects();
-}
-
-
-void Application::create_sync_objects()
-{
-    VkSemaphoreCreateInfo semaphore_create_info = {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-    };
-    VkFenceCreateInfo fence_create_info = {
-            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-            // 让 fence 一开始就是 signaled，因为每一帧都会等待 fence
-            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
-    };
-
-    if (vkCreateSemaphore(_device, &semaphore_create_info, nullptr, &_image_available_semaphore) !=
-                VK_SUCCESS ||
-        vkCreateSemaphore(_device, &semaphore_create_info, nullptr, &_render_finished_semaphore) !=
-                VK_SUCCESS ||
-        vkCreateFence(_device, &fence_create_info, nullptr, &_in_flight_fence) != VK_SUCCESS)
-        throw std::runtime_error("failed to create image available semaphore!");
+    create_frame_synchro_data();
 }
 
 
@@ -540,15 +526,15 @@ void Application::create_instance()
     };
 
     // 所需的 vk 扩展
-    std::vector<const char *> required_extensions = get_required_ext();
+    std::vector<const char *> required_extensions = get_instance_ext();
 
     // 这些数据用于指定当前应用程序需要的全局 extension 以及 validation layers
     VkInstanceCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 
             /// 一般情况下 debug messenger 只有在 instance 创建后和销毁前才是有效的，
-            ///     将这个 create info 传递给 instance 创建信息的 pNext 字段，
-            ///     可以在 instance 的创建和销毁过程进行 debug
+            /// 将这个 create info 传递给 instance 创建信息的 pNext 字段，
+            /// 可以在 instance 的创建和销毁过程进行 debug
             .pNext = &_debug_messenger_create_info,
 
             /// 表示 vulkan 除了枚举出默认的 physical device 外，
@@ -618,7 +604,7 @@ void Application::create_surface()
 }
 
 
-std::vector<const char *> Application::get_required_ext()
+std::vector<const char *> Application::get_instance_ext()
 {
     std::vector<const char *> ext_list;
 
@@ -704,28 +690,8 @@ void Application::mainLoop()
         draw_frame();
     }
 
+    // 等待 device 上的所有 queue 中的操作都完成
     vkDeviceWaitIdle(_device);
-}
-
-
-void Application::create_command_buffer()
-{
-    assert(_device != VK_NULL_HANDLE);
-    assert(_command_pool != VK_NULL_HANDLE);
-
-    // 创建命令缓冲区
-    VkCommandBufferAllocateInfo command_buffer_alloc_info = {
-            .sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = _command_pool,
-            // primary: can be submitted to a queue for execution
-            // secondary: can not be submitted to a queue for execution
-            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 1,
-    };
-
-    if (vkAllocateCommandBuffers(_device, &command_buffer_alloc_info, &_command_buffer) !=
-        VK_SUCCESS)
-        throw std::runtime_error("failed to allocate command buffer.");
 }
 
 
@@ -750,12 +716,12 @@ void Application::record_command_buffer(VkCommandBuffer buffer, uint32_t image_i
             .pClearValues    = &clear_color,
     };
 
-    vkCmdBeginRenderPass(_command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _graphics_pipeline);
+    vkCmdBeginRenderPass(buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _graphics_pipeline);
     // vertexCount, instanceCount, firstVertex, firstInstance
-    vkCmdDraw(_command_buffer, 3, 1, 0, 0);
-    vkCmdEndRenderPass(_command_buffer);
-    if (vkEndCommandBuffer(_command_buffer) != VK_SUCCESS)
+    vkCmdDraw(buffer, 3, 1, 0, 0);
+    vkCmdEndRenderPass(buffer);
+    if (vkEndCommandBuffer(buffer) != VK_SUCCESS)
         throw std::runtime_error("failed to end command buffer.");
 }
 
@@ -775,24 +741,19 @@ void Application::create_command_pool()
 
 void Application::cleanup()
 {
-    vkDestroySemaphore(_device, _render_finished_semaphore, nullptr);
-    vkDestroySemaphore(_device, _image_available_semaphore, nullptr);
-    vkDestroyFence(_device, _in_flight_fence, nullptr);
-    vkDestroyCommandPool(_device, _command_pool, nullptr);
-    for (auto framebuffer: _swapchain_framebuffer_list)
+    for (size_t i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
     {
-        vkDestroyFramebuffer(_device, framebuffer, nullptr);
+        vkDestroySemaphore(_device, _frames[i].render_finish_semaphore, nullptr);
+        vkDestroySemaphore(_device, _frames[i].image_available_semaphore, nullptr);
+        vkDestroyFence(_device, _frames[i].in_flight_fence, nullptr);
     }
-    vkDestroyPipeline(_device, _graphics_pipeline, nullptr);
-    vkDestroyPipelineLayout(_device, _pipeline_layout, nullptr);
-    vkDestroyRenderPass(_device, _render_pass, nullptr);
 
-    for (auto image_view: _swapchain_image_view_list)
-        vkDestroyImageView(_device, image_view, nullptr);
+    // command buffer 会跟随 command pool 一起释放
+    vkDestroyCommandPool(_device, _command_pool, nullptr);
 
-    vkDestroySwapchainKHR(_device, _swapchain, nullptr);
+    clean_swapchain();
+
     vkDestroyDevice(_device, nullptr);
-
     vkDestroySurfaceKHR(_instance, _surface, nullptr);
 
     // vk debug messenger，需要在 instance 之前销毁
@@ -900,7 +861,9 @@ void Application::create_render_pass()
             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 
-            // 在 renderpass 开始和结束的时候应该对图像使用什么 layout
+            /// 在 renderpass 开始和结束的时候应该对图像使用什么 layout
+            /// 由于不需要从 attachment 中读取数据，因此并不关心其 layout，驱动可以做一些优化
+            /// subpass 之后，attachment 需要交给 present engine 显示，因此设为 engine 需要的 layout
             .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .finalLayout   = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,    // 用于 swapchain
     };
@@ -908,7 +871,10 @@ void Application::create_render_pass()
     // subpass 引用 color attachment
     VkAttachmentReference color_attachment_ref = {
             .attachment = 0,    // index in render pass
-            .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+
+            // 当前 subpass 需要 attachment 是什么样的 layout，由于之前的 attachment description 中
+            // 已经说明了 initial layout 是 undefined 的，因此驱动很容易优化
+            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
 
     VkSubpassDescription subpass = {
@@ -985,10 +951,10 @@ void Application::create_logical_device()
     if (vkCreateDevice(_physical_device, &device_create_info, nullptr, &_device) != VK_SUCCESS)
         throw std::runtime_error("failed to create logical device.");
 
-    // 取得 logical device 的各个 queue 的 handle
-    // 第二个参数表示 queue family
-    // 第三个参数表示该 queue family 中 queue 的 index，
-    //  因为只创建了一个 graphics queue family 的 queue，因此 index = 0
+    /// 取得 LOGICAL DEVICE 的各个 QUEUE 的 HANDLE
+    /// 第二个参数表示 queue family
+    /// 第三个参数表示该 queue family 中 queue 的 index，
+    /// 因为只创建了一个 graphics queue family 的 queue，因此 index = 0
     vkGetDeviceQueue(_device, _physical_device_info.graphics_queue_family_idx.value(), 0,
                      &_graphics_queue);
 
@@ -1000,22 +966,33 @@ void Application::create_logical_device()
 
 void Application::draw_frame()
 {
-    vkWaitForFences(_device, 1, &_in_flight_fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(_device, 1, &_in_flight_fence);
+    // UINT64_MAX 表示等待很长时间
+    vkWaitForFences(_device, 1, &_frames[_current_frame_idx].in_flight_fence, VK_TRUE, UINT64_MAX);
 
     uint32_t image_idx;
     /// 向 swapchain 请求一个 presentable 的 image，可能此时 presentation engine 正在读这个 image。
     /// 在 presentation engine 读完 image 后，它会把 semaphore 设为 signaled
-    vkAcquireNextImageKHR(_device, _swapchain, UINT64_MAX, _image_available_semaphore,
-                          VK_NULL_HANDLE, &image_idx);
+    VkResult result = vkAcquireNextImageKHR(_device, _swapchain, UINT64_MAX,
+                                            _frames[_current_frame_idx].image_available_semaphore,
+                                            VK_NULL_HANDLE, &image_idx);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        recreate_swapchain();
+        return;
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
+        throw std::runtime_error("failed to acquire swapchain image.");
+    }
+
+    vkResetFences(_device, 1, &_frames[_current_frame_idx].in_flight_fence);
 
     // 初始化 command buffer，往里填入内容，然后提交给 GPU
-    vkResetCommandBuffer(_command_buffer, 0);
-    record_command_buffer(_command_buffer, image_idx);
+    vkResetCommandBuffer(_frames[_current_frame_idx].command_buffer, 0);
+    record_command_buffer(_frames[_current_frame_idx].command_buffer, image_idx);
     VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 
-    VkSemaphore wait_semaphores[]   = {_image_available_semaphore};
-    VkSemaphore signal_semaphores[] = {_render_finished_semaphore};
+    VkSemaphore wait_semaphores[]   = {_frames[_current_frame_idx].image_available_semaphore};
+    VkSemaphore signal_semaphores[] = {_frames[_current_frame_idx].render_finish_semaphore};
 
     VkSubmitInfo submit_info = {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -1026,14 +1003,15 @@ void Application::draw_frame()
             .pWaitDstStageMask  = wait_stages,
 
             .commandBufferCount = 1,
-            .pCommandBuffers    = &_command_buffer,
+            .pCommandBuffers    = &_frames[_current_frame_idx].command_buffer,
 
             // 在 command buffer 执行完成后，会 signal 哪些 semaphores
             .signalSemaphoreCount = 1,
             .pSignalSemaphores    = signal_semaphores,
     };
 
-    if (vkQueueSubmit(_graphics_queue, 1, &submit_info, _in_flight_fence) != VK_SUCCESS)
+    if (vkQueueSubmit(_graphics_queue, 1, &submit_info,
+                      _frames[_current_frame_idx].in_flight_fence) != VK_SUCCESS)
         throw std::runtime_error("failed to submit draw command buffer!");
 
 
@@ -1041,14 +1019,22 @@ void Application::draw_frame()
     VkPresentInfoKHR present_info = {
             .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores    = &_render_finished_semaphore,
+            .pWaitSemaphores    = &_frames[_current_frame_idx].render_finish_semaphore,
             .swapchainCount     = 1,
             .pSwapchains        = swapchains,
             .pImageIndices      = &image_idx,
             .pResults           = nullptr,
     };
 
-    vkQueuePresentKHR(_present_queue, &present_info);
+    result = vkQueuePresentKHR(_present_queue, &present_info);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || _framebuffer_resized)
+    {
+        _framebuffer_resized = false;
+        recreate_swapchain();
+    } else if (result != VK_SUCCESS)
+        throw std::runtime_error("failed to present swapchain image.");
+
+    _current_frame_idx = (_current_frame_idx + 1) % MAX_FRAMES_IN_FILGHT;
 }
 
 
@@ -1128,4 +1114,100 @@ void Application::print_physical_device_info(const PhysicalDeviceInfo &physical_
         ss << "\t" << ext.extensionName << "\n";
 
     SPDLOG_INFO("{}", ss.str());
+}
+
+
+void Application::create_frame_synchro_data()
+{
+    assert(_device != VK_NULL_HANDLE);
+    assert(_command_pool != VK_NULL_HANDLE);
+
+
+    _frames.resize(MAX_FRAMES_IN_FILGHT);
+
+
+    // 为每一帧创建 command buffer
+    std::vector<VkCommandBuffer> command_buffers;
+    command_buffers.resize(MAX_FRAMES_IN_FILGHT);
+    VkCommandBufferAllocateInfo cmd_buffer_alloc_info = {
+            .sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = _command_pool,
+            // primary: can be submitted to a queue for execution
+            // secondary: can not be submitted to a queue for execution
+            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = (uint32_t) MAX_FRAMES_IN_FILGHT,
+    };
+    if (vkAllocateCommandBuffers(_device, &cmd_buffer_alloc_info, command_buffers.data()) !=
+        VK_SUCCESS)
+        throw std::runtime_error("failed to allocate command buffer.");
+    for (int i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
+        _frames[i].command_buffer = command_buffers[i];
+
+
+    // 为每一帧创建同步对象
+    std::vector<VkSemaphore> image_available_semaphores;
+    std::vector<VkSemaphore> render_finish_semaphores;
+    std::vector<VkFence> in_flight_fences;
+    VkSemaphoreCreateInfo semaphore_create_info = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    };
+    VkFenceCreateInfo fence_create_info = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            // 让 fence 一开始就是 signaled，因为每一帧都会等待 fence
+            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+    };
+    for (size_t i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
+    {
+        if (vkCreateSemaphore(_device, &semaphore_create_info, nullptr,
+                              &_frames[i].image_available_semaphore) != VK_SUCCESS ||
+            vkCreateSemaphore(_device, &semaphore_create_info, nullptr,
+                              &_frames[i].render_finish_semaphore) != VK_SUCCESS ||
+            vkCreateFence(_device, &fence_create_info, nullptr, &_frames[i].in_flight_fence) !=
+                    VK_SUCCESS)
+            throw std::runtime_error("failed to create image available semaphore!");
+    }
+}
+
+
+void Application::recreate_swapchain()
+{
+    assert(_device != VK_NULL_HANDLE);
+
+    // 如果是最小化操作，就暂停程序
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(_window, &width, &height);
+    while (width == 0 || height == 0)
+    {
+        glfwWaitEvents();
+        glfwGetFramebufferSize(_window, &width, &height);
+    }
+
+    // 等待 device 上所有 queue 中的任务等执行完毕，再更换 swapchain
+    vkDeviceWaitIdle(_device);
+
+    // 回收之前的和 swapchain 有关的资源
+    clean_swapchain();
+
+    create_swap_chain();
+    create_image_views();
+    create_render_pass();
+    create_piplie();
+    create_framebuffers();
+}
+
+
+void Application::clean_swapchain()
+{
+    for (auto framebuffer: _swapchain_framebuffer_list)
+        vkDestroyFramebuffer(_device, framebuffer, nullptr);
+
+    vkDestroyPipeline(_device, _graphics_pipeline, nullptr);
+    vkDestroyPipelineLayout(_device, _pipeline_layout, nullptr);
+
+    vkDestroyRenderPass(_device, _render_pass, nullptr);
+
+    for (auto image_view: _swapchain_image_view_list)
+        vkDestroyImageView(_device, image_view, nullptr);
+
+    vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 }

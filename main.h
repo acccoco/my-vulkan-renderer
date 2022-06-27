@@ -20,6 +20,9 @@
 #include <GLFW/glfw3.h>
 
 
+const int MAX_FRAMES_IN_FILGHT = 2;    // 最多允许同时处理多少帧
+
+
 void init_spdlog();
 
 
@@ -38,6 +41,17 @@ struct PhysicalDeviceInfo {
 
     // extension
     std::vector<VkExtensionProperties> support_ext_list;
+};
+
+
+/**
+ * 每一帧所需的同步信息：command buffer，semaphore，fence 等
+ */
+struct FrameSynchroData {
+    VkSemaphore image_available_semaphore;    // 表示从 swapchain 中获取的 image 已经可用
+    VkSemaphore render_finish_semaphore;      // 表示渲染已经完成
+    VkFence in_flight_fence;
+    VkCommandBuffer command_buffer;
 };
 
 
@@ -98,36 +112,20 @@ private:
     VkFormat _swapchain_iamge_format;
     VkExtent2D _swapchain_extent;
     std::vector<VkImageView> _swapchain_image_view_list;    // 手动释放
-
-    VkSemaphore _image_available_semaphore;    // 用于 GPU 的同步
-    VkSemaphore _render_finished_semaphore;
-    VkFence _in_flight_fence;    // 用于 CPU 的同步
+    std::vector<FrameSynchroData> _frames;
+    uint32_t _current_frame_idx = 0;    // 当前正在绘制哪一帧
 
     VkCommandPool _command_pool;
-    VkCommandBuffer _command_buffer;
-
     VkRenderPass _render_pass;
     VkPipelineLayout _pipeline_layout;    // uniform 相关，手动释放资源
     VkPipeline _graphics_pipeline;
     std::vector<VkFramebuffer> _swapchain_framebuffer_list;
+    bool _framebuffer_resized = false;
 
-
-    /**
-     * 用于 debug 的回调函数
-     * @param message_severity 严重程度 verbose, info, warning, error
-     * @param message_type 信息的类型 general, validation, perfomance
-     * @param callback_data 信息的关键内容
-     * @param user_data 自定义的数据
-     * @return 是否应该 abort
-     */
-    static VKAPI_ATTR VkBool32 VKAPI_CALL
-    debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-                   VkDebugUtilsMessageTypeFlagsEXT message_type,
-                   const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data);
 
     void create_surface();
     void create_instance();
-    static std::vector<const char *> get_required_ext();
+    static std::vector<const char *> get_instance_ext();
     bool check_instance_layers();
     void setup_debug_messenger();
 
@@ -145,6 +143,8 @@ private:
     choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes);
     VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities);
     void create_swap_chain();
+    void recreate_swapchain();
+    void clean_swapchain();
     void create_image_views();
 
     // pipeline
@@ -152,10 +152,23 @@ private:
     void create_piplie();
 
     // draw
+    void create_frame_synchro_data();
     void create_framebuffers();
     void create_command_pool();
-    void create_command_buffer();
-    void create_sync_objects();
     void record_command_buffer(VkCommandBuffer buffer, uint32_t image_idx);
     void draw_frame();
+
+
+    /**
+     * 用于 debug 的回调函数
+     * @param message_severity 严重程度 verbose, info, warning, error
+     * @param message_type 信息的类型 general, validation, perfomance
+     * @param callback_data 信息的关键内容
+     * @param user_data 自定义的数据
+     * @return 是否应该 abort
+     */
+    static VKAPI_ATTR VkBool32 VKAPI_CALL
+    debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+                   VkDebugUtilsMessageTypeFlagsEXT message_type,
+                   const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data);
 };
