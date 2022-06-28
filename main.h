@@ -15,6 +15,10 @@
 
 #define VK_ENABLE_BETA_EXTENSIONS    // vulkan_beta.h，在 metal 上运行 vulkan，需要这个
 #include <vulkan/vulkan.h>
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+#define VULKAN_HPP_NO_UNION_CONSTRUCTORS
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
+#include <vulkan/vulkan.hpp>
 #include <spdlog/spdlog.h>
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
@@ -22,6 +26,9 @@
 
 
 const int MAX_FRAMES_IN_FILGHT = 2;    // 最多允许同时处理多少帧
+
+// 用于查找函数地址的 dispatcher，vulkan hpp 提供了一个默认的
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE;
 
 
 void init_spdlog();
@@ -151,8 +158,10 @@ private:
     VkPhysicalDevice _physical_device{VK_NULL_HANDLE};    // 跟随 instance 销毁
     PhysicalDeviceInfo _physical_device_info;
 
-    VkDevice _device;           // 手动释放
+    VkDevice _device;    // 手动释放
+    vk::Device _device_;
     VkQueue _graphics_queue;    // 跟随 device 销毁
+    vk::Queue _graphics_queue_;
     VkQueue _present_queue;     // 跟随 device 销毁
 
     VkSwapchainKHR _swapchain;                     // 手动释放
@@ -165,6 +174,9 @@ private:
 
     VkBuffer _vertex_buffer;
     VkDeviceMemory _vertex_buffer_memory;
+    vk::Buffer _vertex_buffer_;
+    vk::DeviceMemory _vertex_buffer_memory_;
+
     VkCommandPool _command_pool;
     VkRenderPass _render_pass;
     VkPipelineLayout _pipeline_layout;    // uniform 相关，手动释放资源
@@ -187,10 +199,8 @@ private:
     void create_logical_device();
 
     // swapchain, image views
-    static VkSurfaceFormatKHR
-    choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats);
-    static VkPresentModeKHR
-    choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes);
+    static VkSurfaceFormatKHR choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats);
+    static VkPresentModeKHR choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes);
     VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities);
     void create_swap_chain();
     void recreate_swapchain();
@@ -203,11 +213,22 @@ private:
 
     // draw
     void create_vertex_buffer();
+    void copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
+    /**
+     *  创建 buffer，申请 buffer 的内存，并将 buffer 和 memory 绑定在一起
+     * @param memory_properties
+     * @param [out]buffer
+     * @param [out]buffer_memory
+     */
+    void create_buffer(vk::DeviceSize size, vk::BufferUsageFlags buffer_usage,
+                       vk::MemoryPropertyFlags memory_properties, vk::Buffer &buffer, vk::DeviceMemory &buffer_memory);
+    void create_vertex_buffer_();
     VkDeviceMemory alloc_buffer_memory(VkBuffer buffer, VkMemoryPropertyFlags properties);
     void create_frame_synchro_data();
     void create_framebuffers();
     void create_command_pool();
     void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_idx);
+    void record_draw_command_(const vk::CommandBuffer &cmd_buffer, uint32_t image_idx);
     void draw_frame();
 
 
@@ -219,8 +240,8 @@ private:
      * @param user_data 自定义的数据
      * @return 是否应该 abort
      */
-    static VKAPI_ATTR VkBool32 VKAPI_CALL
-    debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-                   VkDebugUtilsMessageTypeFlagsEXT message_type,
-                   const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data);
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+                                                         VkDebugUtilsMessageTypeFlagsEXT message_type,
+                                                         const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
+                                                         void *user_data);
 };

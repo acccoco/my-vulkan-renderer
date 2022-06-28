@@ -38,13 +38,11 @@ void init_spdlog()
 }
 
 
-VkSurfaceFormatKHR
-Application::choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats)
+VkSurfaceFormatKHR Application::choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats)
 {
     for (const auto &format: formats)
     {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
-            format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
             return format;
     }
 
@@ -53,8 +51,7 @@ Application::choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &f
 }
 
 
-VkPresentModeKHR
-Application::choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes)
+VkPresentModeKHR Application::choose_swap_present_model(const std::vector<VkPresentModeKHR> &present_modes)
 {
     for (const auto &present_mode: present_modes)
     {
@@ -83,22 +80,20 @@ VkExtent2D Application::choose_swap_extent(const VkSurfaceCapabilitiesKHR &capab
     glfwGetFramebufferSize(_window, &width, &height);
 
     VkExtent2D acture_extent = {(uint32_t) width, (uint32_t) height};
-    acture_extent.width      = std::clamp(acture_extent.width, capabilities.minImageExtent.width,
-                                          capabilities.maxImageExtent.width);
-    acture_extent.height     = std::clamp(acture_extent.height, capabilities.minImageExtent.height,
-                                          capabilities.maxImageExtent.height);
+    acture_extent.width =
+            std::clamp(acture_extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+    acture_extent.height =
+            std::clamp(acture_extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     return acture_extent;
 }
 
 
 void Application::create_swap_chain()
 {
-    VkSurfaceFormatKHR surface_format =
-            choose_swap_surface_format(_physical_device_info.device_surface_format_list);
-    VkPresentModeKHR present_mode =
-            choose_swap_present_model(_physical_device_info.device_surface_present_mode);
-    _swapchain_extent       = choose_swap_extent(_physical_device_info.device_surface_capabilities);
-    _swapchain_iamge_format = surface_format.format;
+    VkSurfaceFormatKHR surface_format = choose_swap_surface_format(_physical_device_info.device_surface_format_list);
+    VkPresentModeKHR present_mode     = choose_swap_present_model(_physical_device_info.device_surface_present_mode);
+    _swapchain_extent                 = choose_swap_extent(_physical_device_info.device_surface_capabilities);
+    _swapchain_iamge_format           = surface_format.format;
 
     /// vulkan 规定，minImageCount 至少是 1
     /// maxImageCount 为 0 时表示没有限制
@@ -127,7 +122,7 @@ void Application::create_swap_chain()
             .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
 
             .presentMode = present_mode,    // eg. 三缓
-            .clipped = VK_TRUE,    // 是否丢弃 surface 不可见区域的渲染操作，可提升性能
+            .clipped     = VK_TRUE,         // 是否丢弃 surface 不可见区域的渲染操作，可提升性能
 
             // 窗口 resize 的时候，之前的 swap chain 会失效，暂不考虑这种情况
             .oldSwapchain = VK_NULL_HANDLE,
@@ -141,17 +136,14 @@ void Application::create_swap_chain()
     /// graphics 和 present 可能是同一个 queue family，这时就不需要进行 share 了
     uint32_t queue_family_indices[] = {_physical_device_info.graphics_queue_family_idx.value(),
                                        _physical_device_info.present_queue_family_idx.value()};
-    if (_physical_device_info.graphics_queue_family_idx !=
-        _physical_device_info.present_queue_family_idx)
+    if (_physical_device_info.graphics_queue_family_idx != _physical_device_info.present_queue_family_idx)
     {
-        create_info.imageSharingMode      = VK_SHARING_MODE_CONCURRENT,
-        create_info.queueFamilyIndexCount = 2;
-        create_info.pQueueFamilyIndices   = queue_family_indices;
+        create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT, create_info.queueFamilyIndexCount = 2;
+        create_info.pQueueFamilyIndices = queue_family_indices;
     } else
     {
-        create_info.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE,
-        create_info.queueFamilyIndexCount = 0;
-        create_info.pQueueFamilyIndices   = nullptr;
+        create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE, create_info.queueFamilyIndexCount = 0;
+        create_info.pQueueFamilyIndices = nullptr;
     }
 
     if (vkCreateSwapchainKHR(_device, &create_info, nullptr, &_swapchain) != VK_SUCCESS)
@@ -195,10 +187,10 @@ void Application::create_pipeline()
     // 渲染阶段的信息
     VkPipelineShaderStageCreateInfo shader_stage_create_info[2] = {
             VkPipelineShaderStageCreateInfo{
-                    .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    .stage  = VK_SHADER_STAGE_VERTEX_BIT,
-                    .module = vert_shader_module,
-                    .pName  = "main",    // 入口函数
+                    .sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    .stage               = VK_SHADER_STAGE_VERTEX_BIT,
+                    .module              = vert_shader_module,
+                    .pName               = "main",     // 入口函数
                     .pSpecializationInfo = nullptr,    // 可以指定着色器常量的值，可以在编译期优化
             },
             VkPipelineShaderStageCreateInfo{
@@ -210,8 +202,8 @@ void Application::create_pipeline()
     };
 
     // 顶点输入信息
-    auto vertex_binding_description   = Vertex::get_binding_description();
-    auto vertex_attribute_description = Vertex::get_attribute_descripions();
+    auto vertex_binding_description                               = Vertex::get_binding_description();
+    auto vertex_attribute_description                             = Vertex::get_attribute_descripions();
     VkPipelineVertexInputStateCreateInfo vertex_input_create_info = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
             // 指定顶点数据的信息
@@ -317,8 +309,8 @@ void Application::create_pipeline()
             .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
             .alphaBlendOp        = VK_BLEND_OP_ADD,
 
-            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+                              VK_COLOR_COMPONENT_A_BIT,
     };
 
     // 总的混合状态
@@ -342,8 +334,7 @@ void Application::create_pipeline()
             .pushConstantRangeCount = 0,
             .pPushConstantRanges    = nullptr,
     };
-    if (vkCreatePipelineLayout(_device, &pipeline_layout_create_info, nullptr, &_pipeline_layout) !=
-        VK_SUCCESS)
+    if (vkCreatePipelineLayout(_device, &pipeline_layout_create_info, nullptr, &_pipeline_layout) != VK_SUCCESS)
         throw std::runtime_error("failed to create pipeline layout!");
 
     VkGraphicsPipelineCreateInfo pipeline_create_info = {
@@ -378,8 +369,8 @@ void Application::create_pipeline()
             .basePipelineIndex  = -1,
     };
 
-    if (vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr,
-                                  &_graphics_pipeline) != VK_SUCCESS)
+    if (vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &_graphics_pipeline) !=
+        VK_SUCCESS)
         throw std::runtime_error("failed to create graphics pipeline!");
 
     // 可以安全的释放 shader module
@@ -408,8 +399,8 @@ void Application::create_framebuffers()
                 .layers          = 1,
         };
 
-        if (vkCreateFramebuffer(_device, &framebuffer_create_info, nullptr,
-                                &_swapchain_framebuffer_list[i]) != VK_SUCCESS)
+        if (vkCreateFramebuffer(_device, &framebuffer_create_info, nullptr, &_swapchain_framebuffer_list[i]) !=
+            VK_SUCCESS)
             throw std::runtime_error("failed to create framebuffer!");
     }
 }
@@ -441,8 +432,7 @@ void Application::create_image_views()
                                      // if VR, then layer count greater than 1
                                      .layerCount = 1},
         };
-        if (vkCreateImageView(_device, &create_info, nullptr, &_swapchain_image_view_list[i]) !=
-            VK_SUCCESS)
+        if (vkCreateImageView(_device, &create_info, nullptr, &_swapchain_image_view_list[i]) != VK_SUCCESS)
             throw std::runtime_error("failed to create image view.");
     }
 }
@@ -469,7 +459,7 @@ void Application::init_window()
     // 设置窗口大小改变的 callback
     glfwSetWindowUserPointer(_window, this);
     glfwSetFramebufferSizeCallback(_window, [](GLFWwindow *window, int width, int height) {
-        auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
+        auto app                  = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
         app->_framebuffer_resized = true;
     });
 }
@@ -500,6 +490,11 @@ void Application::init_vulkan()
     if (!check_instance_layers())
         throw std::runtime_error("validation layer required, but not available.");
     create_instance();
+
+    // 初始化 vulkan hpp 的默认 dispatcher
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
+
     setup_debug_messenger();
     create_surface();
     pick_physical_device();
@@ -509,8 +504,8 @@ void Application::init_vulkan()
     create_render_pass();
     create_pipeline();
     create_framebuffers();
-    create_vertex_buffer();
     create_command_pool();
+    create_vertex_buffer_();
     create_frame_synchro_data();
 }
 
@@ -643,22 +638,20 @@ void Application::setup_debug_messenger()
 
     // 因为 vkCreateDebugUtilsMessengerEXT 是扩展函数，因此需要查询函数指针
     auto vkCreateDebugUtilsMessengerEXT =
-            (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(
-                    _instance, "vkCreateDebugUtilsMessengerEXT");
+            (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(_instance, "vkCreateDebugUtilsMessengerEXT");
     if (vkCreateDebugUtilsMessengerEXT == nullptr)
         throw std::runtime_error("failed to find function(vkCreateDebugUtilsMessengerEXT)");
 
     // 为 instance 设置 debug messenger
-    if (vkCreateDebugUtilsMessengerEXT(_instance, &_debug_messenger_create_info, nullptr,
-                                       &_debug_messenger) != VK_SUCCESS)
+    if (vkCreateDebugUtilsMessengerEXT(_instance, &_debug_messenger_create_info, nullptr, &_debug_messenger) !=
+        VK_SUCCESS)
         throw std::runtime_error("failed to setup debug messenger.");
 }
 
 
 VkBool32 Application::debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                      VkDebugUtilsMessageTypeFlagsEXT message_type,
-                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
-                                     void *)
+                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *)
 {
 
     const char *type;
@@ -700,6 +693,8 @@ void Application::mainLoop()
 
 void Application::record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_idx)
 {
+    vk::CommandBuffer cmd(command_buffer);
+
     VkCommandBufferBeginInfo command_buffer_begin_info = {
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags            = 0,
@@ -722,10 +717,8 @@ void Application::record_command_buffer(VkCommandBuffer command_buffer, uint32_t
     vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _graphics_pipeline);
 
-    VkBuffer buffers[]     = {_vertex_buffer};
-    VkDeviceSize offsets[] = {0};
-    // params: commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets
-    vkCmdBindVertexBuffers(command_buffer, 0, 1, buffers, offsets);
+    // params: firstBinding, buffers, offsets
+    cmd.bindVertexBuffers(0, {_vertex_buffer_}, {0});
 
     // params: vertexCount, instanceCount, firstVertex, firstInstance
     vkCmdDraw(command_buffer, (uint32_t) vertices.size(), 1, 0, 0);
@@ -762,16 +755,15 @@ void Application::cleanup()
 
     clean_swapchain();
 
-    vkDestroyBuffer(_device, _vertex_buffer, nullptr);
-    vkFreeMemory(_device, _vertex_buffer_memory, nullptr);
+    _device_.destroyBuffer(_vertex_buffer_);
+    _device_.freeMemory(_vertex_buffer_memory_);
 
-    vkDestroyDevice(_device, nullptr);
+    _device_.destroy();
     vkDestroySurfaceKHR(_instance, _surface, nullptr);
 
     // vk debug messenger，需要在 instance 之前销毁
     auto vkDestroyDebugUtilsMessengerEXT =
-            (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(
-                    _instance, "vkDestroyDebugUtilsMessengerEXT");
+            (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(_instance, "vkDestroyDebugUtilsMessengerEXT");
     if (vkDestroyDebugUtilsMessengerEXT != nullptr)
         vkDestroyDebugUtilsMessengerEXT(_instance, _debug_messenger, nullptr);
 
@@ -931,9 +923,8 @@ void Application::create_logical_device()
     std::vector<VkDeviceQueueCreateInfo> queue_create_info_list;
     float queue_priority = 1.f;    // 每个队列的优先级，1.f 最高，0.f 最低
     // 可能同一个 queue family 支持多种特性，因此用 set 去重
-    for (uint32_t queue_family:
-         std::set<uint32_t>{_physical_device_info.graphics_queue_family_idx.value(),
-                            _physical_device_info.present_queue_family_idx.value()})
+    for (uint32_t queue_family: std::set<uint32_t>{_physical_device_info.graphics_queue_family_idx.value(),
+                                                   _physical_device_info.present_queue_family_idx.value()})
         queue_create_info_list.push_back({
                 .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = queue_family,
@@ -962,17 +953,17 @@ void Application::create_logical_device()
 
     if (vkCreateDevice(_physical_device, &device_create_info, nullptr, &_device) != VK_SUCCESS)
         throw std::runtime_error("failed to create logical device.");
+    _device_ = vk::Device(_device);
 
     /// 取得 LOGICAL DEVICE 的各个 QUEUE 的 HANDLE
     /// 第二个参数表示 queue family
     /// 第三个参数表示该 queue family 中 queue 的 index，
     /// 因为只创建了一个 graphics queue family 的 queue，因此 index = 0
-    vkGetDeviceQueue(_device, _physical_device_info.graphics_queue_family_idx.value(), 0,
-                     &_graphics_queue);
+    vkGetDeviceQueue(_device, _physical_device_info.graphics_queue_family_idx.value(), 0, &_graphics_queue);
+    _graphics_queue_ = _graphics_queue;
 
     // 如果同一个 queue family 既支持 graphics，又支持 present，那么 graphics_queue == present_queue
-    vkGetDeviceQueue(_device, _physical_device_info.present_queue_family_idx.value(), 0,
-                     &_present_queue);
+    vkGetDeviceQueue(_device, _physical_device_info.present_queue_family_idx.value(), 0, &_present_queue);
 }
 
 
@@ -984,9 +975,9 @@ void Application::draw_frame()
     uint32_t image_idx;
     /// 向 swapchain 请求一个 presentable 的 image，可能此时 presentation engine 正在读这个 image。
     /// 在 presentation engine 读完 image 后，它会把 semaphore 设为 signaled
-    VkResult result = vkAcquireNextImageKHR(_device, _swapchain, UINT64_MAX,
-                                            _frames[_current_frame_idx].image_available_semaphore,
-                                            VK_NULL_HANDLE, &image_idx);
+    VkResult result =
+            vkAcquireNextImageKHR(_device, _swapchain, UINT64_MAX,
+                                  _frames[_current_frame_idx].image_available_semaphore, VK_NULL_HANDLE, &image_idx);
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
         recreate_swapchain();
@@ -999,32 +990,28 @@ void Application::draw_frame()
     vkResetFences(_device, 1, &_frames[_current_frame_idx].in_flight_fence);
 
     // 初始化 command buffer，往里填入内容，然后提交给 GPU
-    vkResetCommandBuffer(_frames[_current_frame_idx].command_buffer, 0);
-    record_command_buffer(_frames[_current_frame_idx].command_buffer, image_idx);
-    VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    vk::CommandBuffer cur_cmd_buffer{_frames[_current_frame_idx].command_buffer};
+    cur_cmd_buffer.reset({});
+    record_draw_command_(cur_cmd_buffer, image_idx);
+    vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
 
-    VkSemaphore wait_semaphores[]   = {_frames[_current_frame_idx].image_available_semaphore};
-    VkSemaphore signal_semaphores[] = {_frames[_current_frame_idx].render_finish_semaphore};
+    vk::Semaphore wait_semaphores[]   = {_frames[_current_frame_idx].image_available_semaphore};
+    vk::Semaphore signal_semaphores[] = {_frames[_current_frame_idx].render_finish_semaphore};
 
-    VkSubmitInfo submit_info = {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    _graphics_queue_.submit({vk::SubmitInfo{
+                                    // 在写 color attachment 的阶段等待 semaphore，semaphore 表示 image 可用（可以写入）
+                                    .waitSemaphoreCount = 1,
+                                    .pWaitSemaphores    = wait_semaphores,
+                                    .pWaitDstStageMask  = wait_stages,
 
-            // 在写 color attachment 的阶段等待 semaphore，semaphore 表示 image 可用（可以写入）
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores    = wait_semaphores,
-            .pWaitDstStageMask  = wait_stages,
+                                    .commandBufferCount = 1,
+                                    .pCommandBuffers    = &cur_cmd_buffer,
 
-            .commandBufferCount = 1,
-            .pCommandBuffers    = &_frames[_current_frame_idx].command_buffer,
-
-            // 在 command buffer 执行完成后，会 signal 哪些 semaphores
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores    = signal_semaphores,
-    };
-
-    if (vkQueueSubmit(_graphics_queue, 1, &submit_info,
-                      _frames[_current_frame_idx].in_flight_fence) != VK_SUCCESS)
-        throw std::runtime_error("failed to submit draw command buffer!");
+                                    // 在 command buffer 执行完成后，会 signal 哪些 semaphores
+                                    .signalSemaphoreCount = 1,
+                                    .pSignalSemaphores    = signal_semaphores,
+                            }},
+                            vk::Fence(_frames[_current_frame_idx].in_flight_fence));
 
 
     VkSwapchainKHR swapchains[]   = {_swapchain};
@@ -1063,8 +1050,7 @@ PhysicalDeviceInfo Application::get_physical_device_info(VkPhysicalDevice physic
     uint32_t queue_family_cnt = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_cnt, nullptr);
     info.queue_families.resize(queue_family_cnt);
-    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_cnt,
-                                             info.queue_families.data());
+    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_cnt, info.queue_families.data());
     for (int i = 0; i < queue_family_cnt; ++i)
     {
         if (info.queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
@@ -1076,8 +1062,7 @@ PhysicalDeviceInfo Application::get_physical_device_info(VkPhysicalDevice physic
     }
 
     // swapchain
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _surface,
-                                              &info.device_surface_capabilities);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _surface, &info.device_surface_capabilities);
     uint32_t format_cnt = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, _surface, &format_cnt, nullptr);
     if (format_cnt != 0)
@@ -1087,8 +1072,7 @@ PhysicalDeviceInfo Application::get_physical_device_info(VkPhysicalDevice physic
                                              info.device_surface_format_list.data());
     }
     uint32_t present_mode_cnt;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _surface, &present_mode_cnt,
-                                              nullptr);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _surface, &present_mode_cnt, nullptr);
     if (present_mode_cnt != 0)
     {
         info.device_surface_present_mode.resize(present_mode_cnt);
@@ -1100,8 +1084,7 @@ PhysicalDeviceInfo Application::get_physical_device_info(VkPhysicalDevice physic
     uint32_t ext_cnt;
     vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_cnt, nullptr);
     info.support_ext_list.resize(ext_cnt);
-    vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_cnt,
-                                         info.support_ext_list.data());
+    vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_cnt, info.support_ext_list.data());
 
     // memory properties
     vkGetPhysicalDeviceMemoryProperties(physical_device, &info.memory_properties);
@@ -1120,8 +1103,7 @@ void Application::print_physical_device_info(const PhysicalDeviceInfo &physical_
     ss << "\t type: " << physical_device_info.properties.deviceType
        << "(0:other, 1:integrated-gpu, 2:discretegpu, 3:virtual-gpu, 4:cpu)\n";
     ss << "\t geometry shader(bool): " << physical_device_info.features.geometryShader << "\n";
-    ss << "\t tessellation shader(bool): " << physical_device_info.features.tessellationShader
-       << "\n";
+    ss << "\t tessellation shader(bool): " << physical_device_info.features.tessellationShader << "\n";
 
     // extensions
     ss << "extensions: \n";
@@ -1152,8 +1134,7 @@ void Application::create_frame_synchro_data()
             .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = (uint32_t) MAX_FRAMES_IN_FILGHT,
     };
-    if (vkAllocateCommandBuffers(_device, &cmd_buffer_alloc_info, command_buffers.data()) !=
-        VK_SUCCESS)
+    if (vkAllocateCommandBuffers(_device, &cmd_buffer_alloc_info, command_buffers.data()) != VK_SUCCESS)
         throw std::runtime_error("failed to allocate command buffer.");
     for (int i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
         _frames[i].command_buffer = command_buffers[i];
@@ -1173,12 +1154,11 @@ void Application::create_frame_synchro_data()
     };
     for (size_t i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
     {
-        if (vkCreateSemaphore(_device, &semaphore_create_info, nullptr,
-                              &_frames[i].image_available_semaphore) != VK_SUCCESS ||
-            vkCreateSemaphore(_device, &semaphore_create_info, nullptr,
-                              &_frames[i].render_finish_semaphore) != VK_SUCCESS ||
-            vkCreateFence(_device, &fence_create_info, nullptr, &_frames[i].in_flight_fence) !=
-                    VK_SUCCESS)
+        if (vkCreateSemaphore(_device, &semaphore_create_info, nullptr, &_frames[i].image_available_semaphore) !=
+                    VK_SUCCESS ||
+            vkCreateSemaphore(_device, &semaphore_create_info, nullptr, &_frames[i].render_finish_semaphore) !=
+                    VK_SUCCESS ||
+            vkCreateFence(_device, &fence_create_info, nullptr, &_frames[i].in_flight_fence) != VK_SUCCESS)
             throw std::runtime_error("failed to create image available semaphore!");
     }
 }
@@ -1241,9 +1221,8 @@ void Application::create_vertex_buffer()
         throw std::runtime_error("failed to create vertex buffer.");
 
     // VK_MEMORY_PROPERTY_HOST_COHERENT_BIT 可以确保内存可以被立刻写入 GPU 的缓冲区
-    _vertex_buffer_memory =
-            alloc_buffer_memory(_vertex_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    _vertex_buffer_memory = alloc_buffer_memory(_vertex_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     vkBindBufferMemory(_device, _vertex_buffer, _vertex_buffer_memory, 0);
 
     // 将顶点数据写入 vertex buffer memory
@@ -1270,8 +1249,7 @@ VkDeviceMemory Application::alloc_buffer_memory(VkBuffer buffer, VkMemoryPropert
     for (uint32_t i = 0; i < _physical_device_info.memory_properties.memoryTypeCount; ++i)
     {
         if (mem_require.memoryTypeBits & (1 << i) &&
-            (_physical_device_info.memory_properties.memoryTypes[i].propertyFlags & properties) ==
-                    properties)
+            (_physical_device_info.memory_properties.memoryTypes[i].propertyFlags & properties) == properties)
         {
             memory_type_idx = i;
             break;
@@ -1292,4 +1270,116 @@ VkDeviceMemory Application::alloc_buffer_memory(VkBuffer buffer, VkMemoryPropert
         throw std::runtime_error("fail to allocate vertex buffer.");
 
     return memory;
+}
+
+
+void Application::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags buffer_usage,
+                                vk::MemoryPropertyFlags memory_properties, vk::Buffer &buffer,
+                                vk::DeviceMemory &buffer_memory)
+{
+    buffer = _device_.createBuffer({
+            .size        = size,
+            .usage       = buffer_usage,
+            .sharingMode = vk::SharingMode::eExclusive,
+    });
+
+    vk::MemoryRequirements mem_require = _device_.getBufferMemoryRequirements(buffer);
+
+    // 找到合适的 memory type，获得其 index
+    std::optional<uint32_t> mem_type_idx;
+    for (uint32_t i = 0; i < _physical_device_info.memory_properties.memoryTypeCount; ++i)
+    {
+        if (!(mem_require.memoryTypeBits & (1 << i)))
+            continue;
+        if ((vk::MemoryPropertyFlags(_physical_device_info.memory_properties.memoryTypes[i].propertyFlags) &
+             memory_properties) != memory_properties)
+            continue;
+        mem_type_idx = i;
+        break;
+    }
+    if (!mem_type_idx.has_value())
+        throw std::runtime_error("no proper memory type for buffer, failed to allocate buffer.");
+
+    buffer_memory = _device_.allocateMemory({
+            .allocationSize  = mem_require.size,
+            .memoryTypeIndex = mem_type_idx.value(),
+    });
+
+    _device_.bindBufferMemory(buffer, buffer_memory, 0);
+}
+
+
+void Application::create_vertex_buffer_()
+{
+    vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+
+    // create stage buffer and memory
+    vk::Buffer stage_buffer;
+    vk::DeviceMemory stage_buffer_memory;
+    create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+                  vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stage_buffer,
+                  stage_buffer_memory);
+
+    /// copy memory to stage memory
+    /// params: device_memory_obj, offset, size, flags
+    auto data = _device_.mapMemory(stage_buffer_memory, 0, buffer_size, {});
+    std::memcpy(data, vertices.data(), (size_t) buffer_size);
+    _device_.unmapMemory(stage_buffer_memory);
+
+    /// create vertex buffer and memory
+    /// then transfer stage memory to vertex buffer memory
+    create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+                  vk::MemoryPropertyFlagBits::eDeviceLocal, _vertex_buffer_, _vertex_buffer_memory_);
+    copy_buffer(stage_buffer, _vertex_buffer_, buffer_size);
+
+    // 销毁 stage buffer 以及 memory
+    _device_.destroyBuffer(stage_buffer);
+    _device_.free(stage_buffer_memory);
+}
+
+
+void Application::copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size)
+{
+    assert(_command_pool != VK_NULL_HANDLE);
+
+    vk::CommandBuffer temp_cmd = _device_.allocateCommandBuffers({
+            .commandPool        = vk::CommandPool(_command_pool),
+            .level              = vk::CommandBufferLevel::ePrimary,
+            .commandBufferCount = 1,
+    })[0];
+
+    temp_cmd.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    temp_cmd.copyBuffer(src_buffer, dst_buffer, {vk::BufferCopy{.size = size}});
+    temp_cmd.end();
+
+    vk::Queue transfer_queue(_graphics_queue);
+    transfer_queue.submit({vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &temp_cmd}});
+    transfer_queue.waitIdle();
+
+    _device_.freeCommandBuffers(vk::CommandPool(_command_pool), {temp_cmd});
+}
+
+
+void Application::record_draw_command_(const vk::CommandBuffer &cmd_buffer, uint32_t image_idx)
+{
+    vk::ClearValue clear_color{.color = {.float32 = std::array<float, 4>{0.f, 0.f, 0.f, 1.f}}};
+
+    cmd_buffer.begin({.flags = {}, .pInheritanceInfo = {}});
+    cmd_buffer.beginRenderPass(
+            vk::RenderPassBeginInfo{
+                    .renderPass      = vk::RenderPass(_render_pass),
+                    .framebuffer     = vk::Framebuffer(_swapchain_framebuffer_list[image_idx]),
+                    .renderArea      = {.offset = {0, 0},
+                                        .extent = {.width = _swapchain_extent.width, .height = _swapchain_extent.height}},
+                    .clearValueCount = 1,
+                    .pClearValues    = &clear_color,
+            },
+            vk::SubpassContents::eInline);
+    cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, vk::Pipeline(_graphics_pipeline));
+    // params: firstBinding, buffers, offsets
+    cmd_buffer.bindVertexBuffers(0, {_vertex_buffer_}, {0});
+    // params: vertexCount, instanceCount, firstVertex, firstInstance
+    cmd_buffer.draw((uint32_t) vertices.size(), 1, 0, 0);
+    cmd_buffer.endRenderPass();
+    cmd_buffer.end();
 }
