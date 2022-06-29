@@ -491,7 +491,8 @@ void Application::init_vulkan()
         throw std::runtime_error("validation layer required, but not available.");
     create_instance();
 
-    // 初始化 vulkan hpp 的默认 dispatcher
+    /// 初始化 vulkan hpp 的默认 dispatcher
+    /// 有了这个，就不用手动查询扩展函数的地址了
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
     VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
 
@@ -506,6 +507,7 @@ void Application::init_vulkan()
     create_framebuffers();
     create_command_pool();
     create_vertex_buffer_();
+    create_index_buffer();
     create_frame_synchro_data();
 }
 
@@ -757,15 +759,15 @@ void Application::cleanup()
 
     _device_.destroyBuffer(_vertex_buffer_);
     _device_.freeMemory(_vertex_buffer_memory_);
+    _device_.destroyBuffer(_index_buffer);
+    _device_.freeMemory(_index_buffer_memory);
 
     _device_.destroy();
     vkDestroySurfaceKHR(_instance, _surface, nullptr);
 
     // vk debug messenger，需要在 instance 之前销毁
-    auto vkDestroyDebugUtilsMessengerEXT =
-            (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(_instance, "vkDestroyDebugUtilsMessengerEXT");
-    if (vkDestroyDebugUtilsMessengerEXT != nullptr)
-        vkDestroyDebugUtilsMessengerEXT(_instance, _debug_messenger, nullptr);
+    vk::Instance instance = _instance;
+    instance.destroyDebugUtilsMessengerEXT(_debug_messenger);
 
     // vk instance
     vkDestroyInstance(_instance, nullptr);
@@ -998,20 +1000,23 @@ void Application::draw_frame()
     vk::Semaphore wait_semaphores[]   = {_frames[_current_frame_idx].image_available_semaphore};
     vk::Semaphore signal_semaphores[] = {_frames[_current_frame_idx].render_finish_semaphore};
 
-    _graphics_queue_.submit({vk::SubmitInfo{
-                                    // 在写 color attachment 的阶段等待 semaphore，semaphore 表示 image 可用（可以写入）
-                                    .waitSemaphoreCount = 1,
-                                    .pWaitSemaphores    = wait_semaphores,
-                                    .pWaitDstStageMask  = wait_stages,
+    _graphics_queue_.submit(
+            {
+                    vk::SubmitInfo{
+                            // 在写 color attachment 的阶段等待 semaphore，semaphore 表示 image 可用（可以写入）
+                            .waitSemaphoreCount = 1,
+                            .pWaitSemaphores    = wait_semaphores,
+                            .pWaitDstStageMask  = wait_stages,
 
-                                    .commandBufferCount = 1,
-                                    .pCommandBuffers    = &cur_cmd_buffer,
+                            .commandBufferCount = 1,
+                            .pCommandBuffers    = &cur_cmd_buffer,
 
-                                    // 在 command buffer 执行完成后，会 signal 哪些 semaphores
-                                    .signalSemaphoreCount = 1,
-                                    .pSignalSemaphores    = signal_semaphores,
-                            }},
-                            vk::Fence(_frames[_current_frame_idx].in_flight_fence));
+                            // 在 command buffer 执行完成后，会 signal 哪些 semaphores
+                            .signalSemaphoreCount = 1,
+                            .pSignalSemaphores    = signal_semaphores,
+                    },
+            },
+            vk::Fence(_frames[_current_frame_idx].in_flight_fence));
 
 
     VkSwapchainKHR swapchains[]   = {_swapchain};
@@ -1378,8 +1383,34 @@ void Application::record_draw_command_(const vk::CommandBuffer &cmd_buffer, uint
     cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, vk::Pipeline(_graphics_pipeline));
     // params: firstBinding, buffers, offsets
     cmd_buffer.bindVertexBuffers(0, {_vertex_buffer_}, {0});
-    // params: vertexCount, instanceCount, firstVertex, firstInstance
-    cmd_buffer.draw((uint32_t) vertices.size(), 1, 0, 0);
+    // params: buffer, offset, buffer_type
+    cmd_buffer.bindIndexBuffer(_index_buffer, 0, vk::IndexType::eUint16);
+    // params: index count, instance count, first index, vertex offset, first instance
+    cmd_buffer.drawIndexed((uint32_t)indices.size(), 1, 0, 0, 0);
     cmd_buffer.endRenderPass();
     cmd_buffer.end();
+}
+
+
+void Application::create_index_buffer()
+{
+    vk::DeviceSize buffer_size = sizeof(indices[0]) * indices.size();
+
+    vk::Buffer stage_buffer;
+    vk::DeviceMemory stage_buffer_memory;
+    create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+                  vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stage_buffer,
+                  stage_buffer_memory);
+
+    void *data = _device_.mapMemory(stage_buffer_memory, 0, buffer_size, {});
+    std::memcpy(data, indices.data(), (size_t) buffer_size);
+    _device_.unmapMemory(stage_buffer_memory);
+
+    create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+                  vk::MemoryPropertyFlagBits::eDeviceLocal, _index_buffer, _index_buffer_memory);
+
+    copy_buffer(stage_buffer, _index_buffer, buffer_size);
+
+    _device_.destroyBuffer(stage_buffer);
+    _device_.freeMemory(stage_buffer_memory);
 }

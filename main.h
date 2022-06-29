@@ -93,9 +93,15 @@ struct Vertex {
 
 // 三角形的顶点数据
 const std::vector<Vertex> vertices = {
-        {{0.0f, -0.9f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},
+};
+
+// 三角形的 indices 数据
+const std::vector<uint16_t> indices = {
+        0, 1, 2, 2, 3, 0,
 };
 
 
@@ -162,7 +168,7 @@ private:
     vk::Device _device_;
     VkQueue _graphics_queue;    // 跟随 device 销毁
     vk::Queue _graphics_queue_;
-    VkQueue _present_queue;     // 跟随 device 销毁
+    VkQueue _present_queue;    // 跟随 device 销毁
 
     VkSwapchainKHR _swapchain;                     // 手动释放
     std::vector<VkImage> _swapchain_image_list;    // 跟随 swapchain 销毁
@@ -176,6 +182,8 @@ private:
     VkDeviceMemory _vertex_buffer_memory;
     vk::Buffer _vertex_buffer_;
     vk::DeviceMemory _vertex_buffer_memory_;
+    vk::Buffer _index_buffer;
+    vk::DeviceMemory _index_buffer_memory;
 
     VkCommandPool _command_pool;
     VkRenderPass _render_pass;
@@ -213,6 +221,7 @@ private:
 
     // draw
     void create_vertex_buffer();
+    void create_index_buffer();
     void copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
     /**
      *  创建 buffer，申请 buffer 的内存，并将 buffer 和 memory 绑定在一起
