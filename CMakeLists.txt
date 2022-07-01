@@ -21,7 +21,25 @@ find_package(glfw3 REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(spdlog REQUIRED)
 
+function(compile_shader src dst)
+    add_custom_command(
+            OUTPUT ${dst}
+            COMMAND glslc ${src} -o ${dst}
+            DEPENDS ${src}
+            VERBATIM
+    )
+endfunction()
 
-add_executable(VK main.cpp )
+set(shader_dir ${CMAKE_SOURCE_DIR}/shader)
 
+compile_shader(${shader_dir}/triangle.vert ${shader_dir}/triangle.vert.spv)
+compile_shader(${shader_dir}/triangle.frag ${shader_dir}/triangle.frag.spv)
+
+add_executable(VK main.cpp ${shader_dir}/triangle.vert.spv ${shader_dir}/triangle.frag.spv)
 target_link_libraries(VK glfw glm::glm Vulkan::Vulkan spdlog::spdlog)
+
+add_executable(test test.cpp)
+target_link_libraries(test glfw glm::glm Vulkan::Vulkan spdlog::spdlog)
+
+add_executable(new_vk vk.cpp ${shader_dir}/triangle.vert.spv ${shader_dir}/triangle.frag.spv)
+target_link_libraries(new_vk glfw glm::glm Vulkan::Vulkan spdlog::spdlog)
