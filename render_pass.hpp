@@ -1,9 +1,65 @@
 #pragma once
 
+
 #include "./include_vk.hpp"
 #include "./device.hpp"
 #include "./tools.hpp"
-#include "./vertex.hpp"
+
+
+struct Vertex {
+    glm::vec2 pos;
+    glm::vec3 color;
+    glm::vec2 tex_coord;
+
+    static vk::VertexInputBindingDescription binding_description_get()
+    {
+        return {
+                /// 对应 binding array 的索引。
+                /// 因为只用了一个数组为 VAO 填充数据，因此 binding array 长度为 1，需要的索引就是0
+                .binding = 0,
+                .stride  = sizeof(Vertex),
+                // 是实例化的数据还是只是顶点数据
+                .inputRate = vk::VertexInputRate::eVertex,
+        };
+    }
+
+
+    /**
+     * 第一个属性是 position，第二个属性是 color
+     */
+    static std::array<vk::VertexInputAttributeDescription, 3> attr_description_get()
+    {
+        return {vk::VertexInputAttributeDescription{
+                        .location = 0,    // 就是 shader 中 in(location=0)
+                        .binding  = 0,    // VAO 数据数组的第几个
+                        .format   = vk::Format::eR32G32Sfloat,
+                        .offset   = offsetof(Vertex, pos),
+                },
+                vk::VertexInputAttributeDescription{
+                        .location = 1,
+                        .binding  = 0,
+                        .format   = vk::Format::eR32G32B32Sfloat,
+                        .offset   = offsetof(Vertex, color),
+                },
+                vk::VertexInputAttributeDescription{
+                        .location = 2,
+                        .binding  = 0,
+                        .format   = vk::Format::eR32G32Sfloat,
+                        .offset   = offsetof(Vertex, tex_coord),
+                }};
+    }
+};
+
+
+struct UniformBufferObject {
+    // align test
+    alignas(16) glm::vec3 _foo;
+    alignas(16) glm::vec3 _foo2;
+
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
+};
 
 
 inline vk::RenderPass create_render_pass(const vk::Device &device, const SurfaceInfo &surface_info)
@@ -82,7 +138,8 @@ inline vk::RenderPass create_render_pass(const vk::Device &device, const Surface
 
 
 inline vk::Pipeline create_pipeline(const vk::Device &device, const SurfaceInfo &surface_info,
-                                    const vk::PipelineLayout &pipeline_layout, const vk::RenderPass &render_pass)
+                                    const vk::PipelineLayout &pipeline_layout,
+                                    const vk::RenderPass &render_pass)
 {
     spdlog::get("logger")->info("create pipeline.");
 
@@ -106,9 +163,9 @@ inline vk::Pipeline create_pipeline(const vk::Device &device, const SurfaceInfo 
     // 渲染阶段的信息
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stage_create_info = {
             vk::PipelineShaderStageCreateInfo{
-                    .stage               = vk::ShaderStageFlagBits::eVertex,
-                    .module              = vert_shader_module,
-                    .pName               = "main",     // 入口函数
+                    .stage  = vk::ShaderStageFlagBits::eVertex,
+                    .module = vert_shader_module,
+                    .pName  = "main",    // 入口函数
                     .pSpecializationInfo = nullptr,    // 可以指定着色器常量的值，可以在编译期优化
             },
             vk::PipelineShaderStageCreateInfo{
@@ -120,8 +177,8 @@ inline vk::Pipeline create_pipeline(const vk::Device &device, const SurfaceInfo 
 
 
     // 顶点输入信息
-    auto vert_bind_des                                               = Vertex::get_binding_description_();
-    auto vert_attr_des                                               = Vertex::get_attr_descriptions_();
+    auto vert_bind_des = Vertex::binding_description_get();
+    auto vert_attr_des = Vertex::attr_description_get();
     vk::PipelineVertexInputStateCreateInfo vertex_input_create_info_ = {
             // 指定顶点数据的信息
             .vertexBindingDescriptionCount = 1,
@@ -279,7 +336,8 @@ inline vk::Pipeline create_pipeline(const vk::Device &device, const SurfaceInfo 
 
     vk::Result result;
     vk::Pipeline graphics_pipeline;
-    std::tie(result, graphics_pipeline) = device.createGraphicsPipeline(VK_NULL_HANDLE, pipeline_create_info);
+    std::tie(result, graphics_pipeline) =
+            device.createGraphicsPipeline(VK_NULL_HANDLE, pipeline_create_info);
     if (result != vk::Result::eSuccess)
         throw std::runtime_error("failed to create graphics pipeline.");
 
@@ -295,27 +353,108 @@ inline vk::Pipeline create_pipeline(const vk::Device &device, const SurfaceInfo 
 inline vk::DescriptorSetLayout create_descriptor_set_layout(const vk::Device &device)
 {
     spdlog::get("logger")->info("create descriptor set layout.");
-    vk::DescriptorSetLayoutBinding bingding = {
+
+    vk::DescriptorSetLayoutBinding uniform_binding = {
             .binding         = 0,
             .descriptorType  = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
             .stageFlags      = vk::ShaderStageFlagBits::eVertex,
     };
 
+    vk::DescriptorSetLayoutBinding sampler_binding = {
+            .binding            = 1,
+            .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount    = 1,
+            .stageFlags         = vk::ShaderStageFlagBits::eFragment,
+            .pImmutableSamplers = nullptr,
+    };
+
+    std::array<vk::DescriptorSetLayoutBinding, 2> bindings = {
+            uniform_binding,
+            sampler_binding,
+    };
+
 
     return device.createDescriptorSetLayout({
-            .bindingCount = 1,
-            .pBindings    = &bingding,
+            .bindingCount = static_cast<uint32_t>(bindings.size()),
+            .pBindings    = bindings.data(),
     });
 }
 
 
-inline vk::PipelineLayout create_pipelien_layout(const vk::Device &device,
-                                                 const std::vector<vk::DescriptorSetLayout> &descriptor_set_layout)
+inline vk::PipelineLayout
+create_pipelien_layout(const vk::Device &device,
+                       const std::vector<vk::DescriptorSetLayout> &descriptor_set_layout)
 {
     spdlog::get("logger")->info("create pipeline layout.");
     return device.createPipelineLayout(vk::PipelineLayoutCreateInfo{
             .setLayoutCount = (uint32_t) descriptor_set_layout.size(),
             .pSetLayouts    = descriptor_set_layout.data(),
     });
+}
+
+
+inline std::vector<vk::DescriptorSet>
+create_descriptor_set(const vk::Device &device,
+                      const vk::DescriptorSetLayout &descriptor_set_layout,
+                      const vk::DescriptorPool &descriptor_pool, uint32_t frames_in_flight,
+                      const std::vector<vk::Buffer> &uniform_buffer_list,
+                      const vk::ImageView &tex_img_view, const vk::Sampler &tex_sampler)
+{
+    spdlog::get("logger")->info("create descriptor set.");
+
+    if (uniform_buffer_list.size() != frames_in_flight)
+        throw std::runtime_error("descriptor buffer count error.");
+
+    // 为每一帧都创建一个 descriptor set
+    std::vector<vk::DescriptorSet> des_set_list;
+    {
+        std::vector<vk::DescriptorSetLayout> layouts(frames_in_flight, descriptor_set_layout);
+        des_set_list = device.allocateDescriptorSets(vk::DescriptorSetAllocateInfo{
+                .descriptorPool     = descriptor_pool,
+                .descriptorSetCount = (uint32_t) layouts.size(),
+                .pSetLayouts        = layouts.data(),
+        });
+    }
+
+
+    for (size_t i = 0; i < frames_in_flight; ++i)
+    {
+        vk::DescriptorBufferInfo buffer_info = {
+                .buffer = uniform_buffer_list[i],
+                .offset = 0,
+                .range  = sizeof(UniformBufferObject),
+        };
+        vk::WriteDescriptorSet buffer_write = {
+                .dstSet          = des_set_list[i],
+                .dstBinding      = 0,    // 写入 set 的哪个一 binding
+                .dstArrayElement = 0,    // 如果 binding 对应数组，从第几个元素开始写
+                .descriptorCount = 1,    // 写入几个数组元素
+                .descriptorType  = vk::DescriptorType::eUniformBuffer,
+
+                // buffer, image, image view 三选一
+                .pBufferInfo = &buffer_info,
+        };
+
+
+        vk::DescriptorImageInfo img_info = {
+                .sampler     = tex_sampler,
+                .imageView   = tex_img_view,
+                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+        vk::WriteDescriptorSet img_write = {
+                .dstSet          = des_set_list[i],
+                .dstBinding      = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
+                .pImageInfo      = &img_info,
+        };
+
+
+        device.updateDescriptorSets({buffer_write, img_write}, {});
+    }
+
+
+    return des_set_list;
 }

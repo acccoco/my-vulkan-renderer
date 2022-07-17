@@ -12,17 +12,33 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "./buffer.hpp"
-#include "./swapchain.hpp"
 #include "./render_pass.hpp"
+#include "env.hpp"
 
 
-// 用于查找函数地址的 dispatcher，vulkan hpp 提供了一个默认的
+/// 用于查找函数地址的 dispatcher，vulkan hpp 提供了一个默认的
+/// 这是变量定义的位置，vulkan.hpp 会通过 extern 引用这个全局变量
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE;
 
 
 // 窗口的尺寸，单位不是 pixel
 const uint32_t WIDTH  = 800;
 const uint32_t HEIGHT = 600;
+
+
+//
+std::vector<uint16_t> indices = {
+        0, 1, 2, 2, 3, 0,
+};
+
+
+// 三角形的顶点数据
+const std::vector<Vertex> vertices = {
+        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.f, 0.f}},
+        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.f, 0.f}},
+        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.f, 1.f}},
+        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.f, 1.f}},
+};
 
 
 class Application
@@ -72,7 +88,7 @@ private:
         val_logger->set_pattern("[%^%n%$] %v");
     }
 
-    const vk::DebugUtilsMessengerCreateInfoEXT _dbg_msger_info = {
+    const vk::DebugUtilsMessengerCreateInfoEXT _dbg_msg_info = {
             .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
@@ -85,7 +101,8 @@ private:
 
     static vk::Bool32 debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                      VkDebugUtilsMessageTypeFlagsEXT message_type,
-                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *)
+                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
+                                     void *)
     {
         const char *type;
         switch (static_cast<vk::DebugUtilsMessageTypeFlagBitsEXT>(message_type))
@@ -113,12 +130,12 @@ private:
 
 
 #pragma region members
-    static const int MAX_FRAMES_IN_FILGHT = 2;    // 最多允许同时处理多少帧
+    static const int MAX_FRAMES_IN_FLIGHT = 2;    // 最多允许同时处理多少帧
     uint32_t _current_frame_idx           = 0;
 
 
     vk::Instance _instance;
-    vk::DebugUtilsMessengerEXT _dbg_msger;
+    vk::DebugUtilsMessengerEXT _dbg_msg;
     vk::PhysicalDevice _physical_device;
     vk::Device _device;
     DeviceInfo _device_info;
@@ -136,8 +153,8 @@ private:
 
     vk::SwapchainKHR _swapchain;
     std::vector<vk::Framebuffer> _swapchain_framebuffer_list;
-    std::vector<vk::Image> _swapchain_image_list;    // 跟随 swapchain 销毁
-    std::vector<vk::ImageView> _swapchain_image_view_list;
+    std::vector<vk::Image> _swapchain_img_list;    // created by swapchain, destroied by swapchain
+    std::vector<vk::ImageView> _swapchain_img_view_list;
 
 
     std::vector<vk::Semaphore> _image_available_semaphores;
@@ -156,7 +173,11 @@ private:
     vk::Buffer _index_buffer;
     vk::DeviceMemory _index_memory;
     std::vector<vk::Buffer> _uniform_buffers;
-    std::vector<vk::DeviceMemory> _uniform_memorys;
+    std::vector<vk::DeviceMemory> _uniform_memories;
+    vk::Image _tex_image;
+    vk::ImageView _tex_img_view;
+    vk::Sampler _tex_sampler;
+    vk::DeviceMemory _tex_memory;
     vk::DescriptorPool _descriptor_pool;
     std::vector<vk::DescriptorSet> _descriptor_sets;
 
@@ -168,54 +189,69 @@ private:
     void init_application()
     {
         VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
-        _instance = create_instance(_dbg_msger_info);
+        _instance = create_instance(_dbg_msg_info);
         VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
 
 
-        _dbg_msger = set_dbg_msger(_instance, _dbg_msger_info);
+        _dbg_msg = set_dbg_msger(_instance, _dbg_msg_info);
 
 
+        // device 相关
         _surface         = create_surface(_instance, _window);
         _physical_device = pick_physical_device(_instance, _surface, _window);
         _device_info     = DeviceInfo::get_info(_physical_device, _surface);
         _surface_info    = SurfaceInfo::get_info(_physical_device, _surface, _window);
-        _device          = create_device(_physical_device, _surface, _present_queue, _graphics_queue);
-        _command_pool    = create_command_pool(_device, _device_info);
-        _cmd_buffers     = create_command_buffer(_device, _command_pool, MAX_FRAMES_IN_FILGHT);
+        _device       = create_device(_physical_device, _surface, _present_queue, _graphics_queue);
+        _command_pool = create_command_pool(_device, _device_info);
+        _cmd_buffers  = create_command_buffer(_device, _command_pool, MAX_FRAMES_IN_FLIGHT);
         create_sychronization();
 
 
-        _swapchain            = create_swapchain(_device, _surface, _device_info, _surface_info);
-        _swapchain_image_list = _device.getSwapchainImagesKHR(_swapchain);
-        logger->info("swapchain image count: {}", _swapchain_image_list.size());
-        _swapchain_image_view_list = create_swapchain_view(_device, _surface_info, _swapchain_image_list);
+        // swapchain 相关
+        _swapchain          = create_swapchain(_device, _surface, _device_info, _surface_info);
+        _swapchain_img_list = _device.getSwapchainImagesKHR(_swapchain);
+        _swapchain_img_view_list =
+                create_swapchain_view(_device, _surface_info, _swapchain_img_list);
+        logger->info("swapchain image count: {}", _swapchain_img_list.size());
 
 
+        // render pass 相关
         _descriptor_set_layout = create_descriptor_set_layout(_device);
         _pipeline_layout       = create_pipelien_layout(_device, {_descriptor_set_layout});
         _render_pass           = create_render_pass(_device, _surface_info);
-        _graphics_pipeline     = create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
+        _graphics_pipeline =
+                create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
 
 
+        // 各种 buffer
         _swapchain_framebuffer_list =
-                create_framebuffers(_device, _surface_info, _swapchain_image_view_list, _render_pass);
-        create_vertex_buffer_(_device, _device_info, _command_pool, _graphics_queue, vertices, _vertex_buffer,
-                              _vertex_memory);
-        create_index_buffer(_device, _device_info, _command_pool, _graphics_queue, indices, _index_buffer,
-                            _index_memory);
-        _uniform_buffers.resize(MAX_FRAMES_IN_FILGHT);
-        _uniform_memorys.resize(MAX_FRAMES_IN_FILGHT);
-        for (size_t i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
-            create_uniform_buffer(_device, _device_info, _uniform_buffers[i], _uniform_memorys[i]);
-        _descriptor_pool = create_descriptor_pool(_device, MAX_FRAMES_IN_FILGHT);
+                create_framebuffers(_device, _surface_info, _swapchain_img_view_list, _render_pass);
+
+        create_vertex_buffer_(_device, _device_info, _command_pool, _graphics_queue, vertices,
+                              _vertex_buffer, _vertex_memory);
+        create_index_buffer(_device, _device_info, _command_pool, _graphics_queue, indices,
+                            _index_buffer, _index_memory);
+
+        _uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+        _uniform_memories.resize(MAX_FRAMES_IN_FLIGHT);
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            create_uniform_buffer(_device, _device_info, _uniform_buffers[i], _uniform_memories[i]);
+
+        create_tex_image(_device, _device_info, _graphics_queue, _command_pool,
+                         std::string(tex_dir) + "/head.jpg", _tex_image, _tex_memory);
+        _tex_img_view = img_view_create(_device, _tex_image, vk::Format::eR8G8B8A8Srgb);
+        _tex_sampler  = sampler_create(_device, _device_info);
+
+        _descriptor_pool = create_descriptor_pool(_device, MAX_FRAMES_IN_FLIGHT);
         _descriptor_sets = create_descriptor_set(_device, _descriptor_set_layout, _descriptor_pool,
-                                                 MAX_FRAMES_IN_FILGHT, _uniform_buffers);
+                                                 MAX_FRAMES_IN_FLIGHT, _uniform_buffers,
+                                                 _tex_img_view, _tex_sampler);
     }
 
 
     void cleanup()
     {
-        for (size_t i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             _device.destroySemaphore(_image_available_semaphores[i]);
             _device.destroySemaphore(_render_finish_semaphores[i]);
@@ -223,56 +259,64 @@ private:
         }
 
 
+        // 各种 buffer
+        _device.destroySampler(_tex_sampler);
         _device.destroyBuffer(_vertex_buffer);
         _device.free(_vertex_memory);
         _device.destroyBuffer(_index_buffer);
         _device.free(_index_memory);
-        for (size_t i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             _device.destroyBuffer(_uniform_buffers[i]);
-            _device.free(_uniform_memorys[i]);
+            _device.free(_uniform_memories[i]);
         }
+        _device.destroyImageView(_tex_img_view);
+        _device.destroyImage(_tex_image);
+        _device.freeMemory(_tex_memory);
         _device.destroyDescriptorPool(_descriptor_pool);
+        _device.destroyCommandPool(_command_pool);
 
 
+        // render pass
         _device.destroyRenderPass(_render_pass);
         _device.destroyPipeline(_graphics_pipeline);
         _device.destroyPipelineLayout(_pipeline_layout);
         _device.destroyDescriptorSetLayout(_descriptor_set_layout);
 
 
+        // swapchain
         _device.destroySwapchainKHR(_swapchain);
         for (auto &framebuffer: _swapchain_framebuffer_list)
             _device.destroyFramebuffer(framebuffer);
-        for (auto &image_view: _swapchain_image_view_list)
+        for (auto &image_view: _swapchain_img_view_list)
             _device.destroyImageView(image_view);
 
 
-        _device.destroyCommandPool(_command_pool);
-
-
+        // device
         _device.destroy();
         _instance.destroySurfaceKHR(_surface);
-        _instance.destroyDebugUtilsMessengerEXT(_dbg_msger);
+        _instance.destroyDebugUtilsMessengerEXT(_dbg_msg);
         _instance.destroy();
     }
 
 
     void draw()
     {
-        _device.waitForFences({_in_flight_fences[_current_frame_idx]}, VK_TRUE, UINT64_MAX);
+        (void) _device.waitForFences({_in_flight_fences[_current_frame_idx]}, VK_TRUE, UINT64_MAX);
 
 
         /// 向 swapchain 请求一个 presentable 的 image，可能此时 presentation engine 正在读这个 image。
         /// 在 presentation engine 读完 image 后，它会把 semaphore 设为 signaled
         /// 如果 swapchain 已经不适合 surface 了，就重新创建一个 swapchain
-        const auto &[acquire_result, image_idx] = acquireNextImageKHR(
-                _device, _swapchain, UINT64_MAX, _image_available_semaphores[_current_frame_idx], {});
+        const auto &[acquire_result, image_idx] =
+                acquireNextImageKHR(_device, _swapchain, UINT64_MAX,
+                                    _image_available_semaphores[_current_frame_idx], {});
         if (acquire_result == vk::Result::eErrorOutOfDateKHR)
         {
             recreate_swapchain();
             return;
-        } else if (acquire_result != vk::Result::eSuccess && acquire_result != vk::Result::eSuboptimalKHR)
+        } else if (acquire_result != vk::Result::eSuccess &&
+                   acquire_result != vk::Result::eSuboptimalKHR)
             throw std::runtime_error("failed to acquire swapchain image.");
 
 
@@ -281,7 +325,7 @@ private:
 
 
         // 更新 MVP 矩阵
-        update_uniform_memory(_device, _surface_info, _uniform_memorys[_current_frame_idx]);
+        update_uniform_memory(_device, _surface_info, _uniform_memories[_current_frame_idx]);
 
 
         // 记录绘制的命令
@@ -309,21 +353,25 @@ private:
 
         // 提交绘制命令
         std::vector<vk::CommandBuffer> commit_cmd_buffers = {cur_cmd_buffer};
-        std::vector<vk::Semaphore> wait_semaphores        = {_image_available_semaphores[_current_frame_idx]};
-        std::vector<vk::PipelineStageFlags> wait_stages   = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
-        std::vector<vk::Semaphore> singal_semaphores      = {_render_finish_semaphores[_current_frame_idx]};
-        _graphics_queue.submit({vk::SubmitInfo{
-                                       .waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size()),
-                                       .pWaitSemaphores    = wait_semaphores.data(),
-                                       .pWaitDstStageMask  = wait_stages.data(),
+        std::vector<vk::Semaphore> wait_semaphores        = {
+                       _image_available_semaphores[_current_frame_idx]};
+        std::vector<vk::PipelineStageFlags> wait_stages = {
+                vk::PipelineStageFlagBits::eColorAttachmentOutput};
+        std::vector<vk::Semaphore> signal_semaphores = {
+                _render_finish_semaphores[_current_frame_idx]};
+        _graphics_queue.submit(
+                {vk::SubmitInfo{
+                        .waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size()),
+                        .pWaitSemaphores    = wait_semaphores.data(),
+                        .pWaitDstStageMask  = wait_stages.data(),
 
-                                       .commandBufferCount = static_cast<uint32_t>(commit_cmd_buffers.size()),
-                                       .pCommandBuffers    = commit_cmd_buffers.data(),
+                        .commandBufferCount = static_cast<uint32_t>(commit_cmd_buffers.size()),
+                        .pCommandBuffers    = commit_cmd_buffers.data(),
 
-                                       .signalSemaphoreCount = static_cast<uint32_t>(singal_semaphores.size()),
-                                       .pSignalSemaphores    = singal_semaphores.data(),
-                               }},
-                               _in_flight_fences[_current_frame_idx]);
+                        .signalSemaphoreCount = static_cast<uint32_t>(signal_semaphores.size()),
+                        .pSignalSemaphores    = signal_semaphores.data(),
+                }},
+                _in_flight_fences[_current_frame_idx]);
 
 
         // 将结果送到 surface 显示
@@ -338,17 +386,17 @@ private:
                          .pImageIndices  = image_indices.data(),
         };
         vk::Result present_result = _present_queue.presentKHR(present_info);
-        if (present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR ||
-            glfw_user_data.framebuffer_resized)
+        if (present_result == vk::Result::eErrorOutOfDateKHR ||
+            present_result == vk::Result::eSuboptimalKHR || glfw_user_data.framebuffer_resized)
         {
             glfw_user_data.framebuffer_resized = false;
             recreate_swapchain();
         } else if (present_result != vk::Result::eSuccess)
-            throw std::runtime_error("failt to present swapchain image.");
+            throw std::runtime_error("failed to present swapchain image.");
 
 
         // 最后交换 in flight frame index
-        _current_frame_idx = (_current_frame_idx + 1) % MAX_FRAMES_IN_FILGHT;
+        _current_frame_idx = (_current_frame_idx + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
 
@@ -373,31 +421,33 @@ private:
             _device.destroyFramebuffer(framebuffer);
         _device.destroyPipeline(_graphics_pipeline);
         _device.destroyRenderPass(_render_pass);
-        for (auto image_view: _swapchain_image_view_list)
+        for (auto image_view: _swapchain_img_view_list)
             _device.destroyImageView(image_view);
         _device.destroySwapchainKHR(_swapchain);
 
 
         /// 重新创建 swapchain
-        _surface_info              = SurfaceInfo::get_info(_physical_device, _surface, _window);
-        _swapchain                 = create_swapchain(_device, _surface, _device_info, _surface_info);
-        _swapchain_image_list      = _device.getSwapchainImagesKHR(_swapchain);
-        _swapchain_image_view_list = create_swapchain_view(_device, _surface_info, _swapchain_image_list);
-        _render_pass               = create_render_pass(_device, _surface_info);
-        _graphics_pipeline         = create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
+        _surface_info       = SurfaceInfo::get_info(_physical_device, _surface, _window);
+        _swapchain          = create_swapchain(_device, _surface, _device_info, _surface_info);
+        _swapchain_img_list = _device.getSwapchainImagesKHR(_swapchain);
+        _swapchain_img_view_list =
+                create_swapchain_view(_device, _surface_info, _swapchain_img_list);
+        _render_pass = create_render_pass(_device, _surface_info);
+        _graphics_pipeline =
+                create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
         _swapchain_framebuffer_list =
-                create_framebuffers(_device, _surface_info, _swapchain_image_view_list, _render_pass);
+                create_framebuffers(_device, _surface_info, _swapchain_img_view_list, _render_pass);
     }
 
 
     void create_sychronization()
     {
         spdlog::get("logger")->info("create synchronization.");
-        _image_available_semaphores.resize(MAX_FRAMES_IN_FILGHT);
-        _render_finish_semaphores.resize(MAX_FRAMES_IN_FILGHT);
-        _in_flight_fences.resize(MAX_FRAMES_IN_FILGHT);
+        _image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        _render_finish_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        _in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FILGHT; ++i)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             _image_available_semaphores[i] = _device.createSemaphore({});
             _render_finish_semaphores[i]   = _device.createSemaphore({});
