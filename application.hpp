@@ -341,9 +341,9 @@ private:
                         .pClearValues    = &_clear_value,
                 },
                 vk::SubpassContents::eInline);
-        cur_cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _graphics_pipeline);
         cur_cmd_buffer.bindVertexBuffers(0, {_vertex_buffer}, {0});
         cur_cmd_buffer.bindIndexBuffer(_index_buffer, 0, vk::IndexType::eUint16);
+        cur_cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _graphics_pipeline);
         cur_cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _pipeline_layout, 0,
                                           {_descriptor_sets[_current_frame_idx]}, {});
         cur_cmd_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);

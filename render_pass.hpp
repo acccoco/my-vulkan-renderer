@@ -11,15 +11,17 @@ struct Vertex {
     glm::vec3 color;
     glm::vec2 tex_coord;
 
-    static vk::VertexInputBindingDescription binding_description_get()
+    static std::vector<vk::VertexInputBindingDescription> binding_description_get()
     {
         return {
-                /// 对应 binding array 的索引。
-                /// 因为只用了一个数组为 VAO 填充数据，因此 binding array 长度为 1，需要的索引就是0
-                .binding = 0,
-                .stride  = sizeof(Vertex),
-                // 是实例化的数据还是只是顶点数据
-                .inputRate = vk::VertexInputRate::eVertex,
+                vk::VertexInputBindingDescription{
+                        /// 对应 binding array 的索引。
+                        /// 因为只用了一个数组为 VAO 填充数据，因此 binding array 长度为 1，需要的索引就是0
+                        .binding = 0,
+                        .stride  = sizeof(Vertex),
+                        // 是实例化的数据还是只是顶点数据
+                        .inputRate = vk::VertexInputRate::eVertex,
+                },
         };
     }
 
@@ -181,8 +183,8 @@ inline vk::Pipeline create_pipeline(const vk::Device &device, const SurfaceInfo 
     auto vert_attr_des = Vertex::attr_description_get();
     vk::PipelineVertexInputStateCreateInfo vertex_input_create_info_ = {
             // 指定顶点数据的信息
-            .vertexBindingDescriptionCount = 1,
-            .pVertexBindingDescriptions    = &vert_bind_des,
+            .vertexBindingDescriptionCount = static_cast<uint32_t>(vert_bind_des.size()),
+            .pVertexBindingDescriptions    = vert_bind_des.data(),
 
             // 指定顶点属性的信息
             .vertexAttributeDescriptionCount = (uint32_t) vert_attr_des.size(),
