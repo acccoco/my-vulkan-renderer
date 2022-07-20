@@ -17,6 +17,7 @@ if (APPLE)
 
     add_compile_definitions(VK_ICD_FILENAMES=/usr/local/share/vulkan/icd.d/MoltenVK_icd.json)
     add_compile_definitions(VK_LAYER_PATH=/usr/local/share/vulkan/explicit_layer.d)
+    # enable best practice validation layer
     add_compile_definitions(VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT;VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ARM)
 endif ()
 
@@ -66,6 +67,7 @@ set(source
         vk.cpp
         buffer.cpp
         device.cpp
+        render_pass.cpp
         )
 add_executable(VK ${source})
 target_link_libraries(VK ${libs})

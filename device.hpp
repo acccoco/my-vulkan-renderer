@@ -19,15 +19,14 @@ struct DeviceInfo {
     std::vector<vk::ExtensionProperties> support_ext_list;
 
 
-    static DeviceInfo get_info(const vk::PhysicalDevice &physical_device,
-                               const vk::SurfaceKHR &surface)
+    static DeviceInfo get_info(const vk::PhysicalDevice &physical_device, const vk::SurfaceKHR &surface)
     {
         DeviceInfo info{
                 .physical_device_properties        = physical_device.getProperties(),
                 .physical_device_features          = physical_device.getFeatures(),
                 .physical_device_memory_properties = physical_device.getMemoryProperties(),
                 .queue_family_property_list        = physical_device.getQueueFamilyProperties(),
-                .support_ext_list = physical_device.enumerateDeviceExtensionProperties(),
+                .support_ext_list                  = physical_device.enumerateDeviceExtensionProperties(),
         };
 
         for (uint32_t i = 0; i < info.queue_family_property_list.size(); ++i)
@@ -55,8 +54,7 @@ struct DeviceInfo {
         {
             if (!(mem_require.memoryTypeBits & (1 << i)))
                 continue;
-            if ((vk::MemoryPropertyFlags(
-                         physical_device_memory_properties.memoryTypes[i].propertyFlags) &
+            if ((vk::MemoryPropertyFlags(physical_device_memory_properties.memoryTypes[i].propertyFlags) &
                  mem_property) != mem_property)
                 continue;
             mem_type_idx = i;
@@ -78,8 +76,8 @@ struct SurfaceInfo {
     vk::Extent2D extent;
 
 
-    static SurfaceInfo get_info(const vk::PhysicalDevice &physical_device,
-                                const vk::SurfaceKHR &surface, GLFWwindow *window)
+    static SurfaceInfo get_info(const vk::PhysicalDevice &physical_device, const vk::SurfaceKHR &surface,
+                                GLFWwindow *window)
     {
         SurfaceInfo info = {
                 .capability        = physical_device.getSurfaceCapabilitiesKHR(surface),
@@ -99,15 +97,13 @@ struct SurfaceInfo {
     static vk::SurfaceFormatKHR choose_format(const std::vector<vk::SurfaceFormatKHR> &format_list_)
     {
         for (const auto &format: format_list_)
-            if (format.format == vk::Format::eB8G8R8A8Srgb &&
-                format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+            if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
                 return format;
         return format_list_[0];
     }
 
 
-    static vk::PresentModeKHR
-    choose_present_mode(const std::vector<vk::PresentModeKHR> &present_mode_list_)
+    static vk::PresentModeKHR choose_present_mode(const std::vector<vk::PresentModeKHR> &present_mode_list_)
     {
         for (const auto &present_mode: present_mode_list_)
             if (present_mode == vk::PresentModeKHR::eMailbox)
@@ -133,10 +129,9 @@ struct SurfaceInfo {
 
 
         vk::Extent2D extent;
-        extent.width  = std::clamp((uint32_t) width, capability_.minImageExtent.width,
-                                   capability_.maxImageExtent.width);
-        extent.height = std::clamp((uint32_t) height, capability_.minImageExtent.height,
-                                   capability_.maxImageExtent.height);
+        extent.width = std::clamp((uint32_t) width, capability_.minImageExtent.width, capability_.maxImageExtent.width);
+        extent.height =
+                std::clamp((uint32_t) height, capability_.minImageExtent.height, capability_.maxImageExtent.height);
         return extent;
     }
 };
@@ -147,59 +142,35 @@ struct GLFWUserData {
 };
 
 
-/**
- * 初始化 glfw，创建 window，设置窗口大小改变的 callback
- * @param width
- * @param height
- * @param user_data
- * @return
- */
 GLFWwindow *init_window(int width, int height, GLFWUserData user_data);
-
-
 vk::SurfaceKHR create_surface(const vk::Instance &instance, GLFWwindow *window);
-
-
-/**
- * 检查 layers 是否受支持，因为在 validation layer 启用之前没人报错，所以需要手动检查
- */
 bool check_instance_layers(const std::vector<const char *> &layers);
-
-
 vk::Instance create_instance(const vk::DebugUtilsMessengerCreateInfoEXT &dbg_msger_create_info);
-
-
-/**
- * 创建了，自动就设置到 instance 中了，返回的 handle 用于销毁
- */
-vk::DebugUtilsMessengerEXT
-set_dbg_msger(const vk::Instance &instance,
-              const vk::DebugUtilsMessengerCreateInfoEXT &dbg_msger_create_info);
-
-
+vk::DebugUtilsMessengerEXT set_dbg_msger(const vk::Instance &instance,
+                                         const vk::DebugUtilsMessengerCreateInfoEXT &dbg_msger_create_info);
 vk::PhysicalDevice pick_physical_device(const vk::Instance &instance, const vk::SurfaceKHR &surface,
                                         GLFWwindow *window);
-
-
-/**
- * 创建 logical device，并获得 queue
- * @param [out]present_queue
- * @param [out]graphics_queue
- * @return
- */
 vk::Device create_device(const vk::PhysicalDevice &physical_device, const vk::SurfaceKHR &surface,
                          vk::Queue &present_queue, vk::Queue &graphics_queue);
-
-
-std::pair<vk::Result, uint32_t>
-acquireNextImageKHR(const vk::Device &device, const vk::SwapchainKHR &swapchain, uint64_t timeout,
-                    const vk::Semaphore &semaphore, const vk::Fence &fence);
-
-
+std::pair<vk::Result, uint32_t> acquireNextImageKHR(const vk::Device &device, const vk::SwapchainKHR &swapchain,
+                                                    uint64_t timeout, const vk::Semaphore &semaphore,
+                                                    const vk::Fence &fence);
 vk::SwapchainKHR create_swapchain(const vk::Device &device, const vk::SurfaceKHR &surface,
                                   const DeviceInfo &device_info, const SurfaceInfo &surface_info);
-
-
-std::vector<vk::ImageView> create_swapchain_view(const vk::Device &device,
-                                                 const SurfaceInfo &surface_info,
+std::vector<vk::ImageView> create_swapchain_view(const vk::Device &device, const SurfaceInfo &surface_info,
                                                  const std::vector<vk::Image> &image_list);
+
+
+struct Env {
+    vk::PhysicalDevice physical_device;
+    vk::Device device;
+    DeviceInfo device_info;
+
+    vk::SurfaceKHR surface;
+    SurfaceInfo surface_info;
+
+    vk::Queue graphics_queue;
+    vk::Queue present_queue;
+
+    vk::CommandPool cmd_pool;
+};

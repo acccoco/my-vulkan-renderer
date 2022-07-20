@@ -313,7 +313,8 @@ std::vector<vk::ImageView> create_swapchain_view(const vk::Device &device,
     std::vector<vk::ImageView> view_list;
 
     for (const vk::Image &image: image_list)
-        view_list.push_back(img_view_create(device, image, surface_info.format.format));
+        view_list.push_back(img_view_create(device, image, surface_info.format.format,
+                                            vk::ImageAspectFlagBits::eColor));
 
     return view_list;
 }

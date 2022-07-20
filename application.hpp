@@ -29,15 +29,22 @@ const uint32_t HEIGHT = 600;
 //
 std::vector<uint16_t> indices = {
         0, 1, 2, 2, 3, 0,
+
+        4, 5, 6, 6, 7, 4,
 };
 
 
 // 三角形的顶点数据
 const std::vector<Vertex> vertices = {
-        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.f, 0.f}},
-        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.f, 0.f}},
-        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.f, 1.f}},
-        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.f, 1.f}},
+        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
 };
 
 
@@ -145,6 +152,7 @@ private:
     vk::Queue _present_queue;
     vk::CommandPool _command_pool;
     std::vector<vk::CommandBuffer> _cmd_buffers;
+    Env _env;
 
 
     GLFWwindow *_window;
@@ -180,9 +188,11 @@ private:
     vk::DeviceMemory _tex_memory;
     vk::DescriptorPool _descriptor_pool;
     std::vector<vk::DescriptorSet> _descriptor_sets;
+    vk::Image _depth_img;
+    vk::DeviceMemory _depth_mem;
+    vk::ImageView _depth_img_view;
 
 
-    vk::ClearValue _clear_value = {.color = {.float32 = std::array<float, 4>{0.f, 0.f, 0.f, 1.f}}};
 #pragma endregion
 
 
@@ -205,6 +215,16 @@ private:
         _command_pool = create_command_pool(_device, _device_info);
         _cmd_buffers  = create_command_buffer(_device, _command_pool, MAX_FRAMES_IN_FLIGHT);
         create_sychronization();
+        _env = {
+                .physical_device = _physical_device,
+                .device          = _device,
+                .device_info     = _device_info,
+                .surface         = _surface,
+                .surface_info    = _surface_info,
+                .graphics_queue  = _graphics_queue,
+                .present_queue   = _present_queue,
+                .cmd_pool        = _command_pool,
+        };
 
 
         // swapchain 相关
@@ -218,14 +238,15 @@ private:
         // render pass 相关
         _descriptor_set_layout = create_descriptor_set_layout(_device);
         _pipeline_layout       = create_pipelien_layout(_device, {_descriptor_set_layout});
-        _render_pass           = create_render_pass(_device, _surface_info);
+        _render_pass           = create_render_pass(_env);
         _graphics_pipeline =
                 create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
 
 
         // 各种 buffer
+        depth_resource_create(_env, _depth_img, _depth_mem, _depth_img_view);
         _swapchain_framebuffer_list =
-                create_framebuffers(_device, _surface_info, _swapchain_img_view_list, _render_pass);
+                create_framebuffers(_env, _render_pass, _swapchain_img_view_list, _depth_img_view);
 
         create_vertex_buffer_(_device, _device_info, _command_pool, _graphics_queue, vertices,
                               _vertex_buffer, _vertex_memory);
@@ -239,7 +260,8 @@ private:
 
         create_tex_image(_device, _device_info, _graphics_queue, _command_pool,
                          std::string(tex_dir) + "/head.jpg", _tex_image, _tex_memory);
-        _tex_img_view = img_view_create(_device, _tex_image, vk::Format::eR8G8B8A8Srgb);
+        _tex_img_view = img_view_create(_device, _tex_image, vk::Format::eR8G8B8A8Srgb,
+                                        vk::ImageAspectFlagBits::eColor);
         _tex_sampler  = sampler_create(_device, _device_info);
 
         _descriptor_pool = create_descriptor_pool(_device, MAX_FRAMES_IN_FLIGHT);
@@ -275,6 +297,7 @@ private:
         _device.freeMemory(_tex_memory);
         _device.destroyDescriptorPool(_descriptor_pool);
         _device.destroyCommandPool(_command_pool);
+        depth_resource_destroy();
 
 
         // render pass
@@ -305,9 +328,11 @@ private:
         (void) _device.waitForFences({_in_flight_fences[_current_frame_idx]}, VK_TRUE, UINT64_MAX);
 
 
-        /// 向 swapchain 请求一个 presentable 的 image，可能此时 presentation engine 正在读这个 image。
-        /// 在 presentation engine 读完 image 后，它会把 semaphore 设为 signaled
-        /// 如果 swapchain 已经不适合 surface 了，就重新创建一个 swapchain
+        /**
+         * 向 swapchain 请求一个 presentable 的 image，可能此时 presentation engine 正在读这个 image。
+         * 在 presentation engine 读完 image 后，它会把 semaphore 设为 signaled
+         * 如果 swapchain 已经不适合 surface 了，就重新创建一个 swapchain
+         */
         const auto &[acquire_result, image_idx] =
                 acquireNextImageKHR(_device, _swapchain, UINT64_MAX,
                                     _image_available_semaphores[_current_frame_idx], {});
@@ -328,19 +353,25 @@ private:
         update_uniform_memory(_device, _surface_info, _uniform_memories[_current_frame_idx]);
 
 
+        /* clear value 的顺序应该和 framebuffer 中 attachment 的顺序一致 */
+        std::array<vk::ClearValue, 2> clear_values = {
+                vk::ClearValue{.color = {.float32 = std::array<float, 4>{0.f, 0.f, 0.f, 1.f}}},
+                vk::ClearValue{.depthStencil = {1.f, 0}},
+        };
+        vk::RenderPassBeginInfo render_pass_info = {
+                .renderPass      = _render_pass,
+                .framebuffer     = _swapchain_framebuffer_list[image_idx],
+                .renderArea      = {.offset = {0, 0}, .extent = _surface_info.extent},
+                .clearValueCount = static_cast<uint32_t>(clear_values.size()),
+                .pClearValues    = clear_values.data(),
+        };
+
+
         // 记录绘制的命令
         vk::CommandBuffer cur_cmd_buffer = _cmd_buffers[_current_frame_idx];
         cur_cmd_buffer.reset();
         cur_cmd_buffer.begin(vk::CommandBufferBeginInfo{});
-        cur_cmd_buffer.beginRenderPass(
-                vk::RenderPassBeginInfo{
-                        .renderPass      = _render_pass,
-                        .framebuffer     = _swapchain_framebuffer_list[image_idx],
-                        .renderArea      = {.offset = {0, 0}, .extent = _surface_info.extent},
-                        .clearValueCount = 1,
-                        .pClearValues    = &_clear_value,
-                },
-                vk::SubpassContents::eInline);
+        cur_cmd_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
         cur_cmd_buffer.bindVertexBuffers(0, {_vertex_buffer}, {0});
         cur_cmd_buffer.bindIndexBuffer(_index_buffer, 0, vk::IndexType::eUint16);
         cur_cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _graphics_pipeline);
@@ -424,19 +455,22 @@ private:
         for (auto image_view: _swapchain_img_view_list)
             _device.destroyImageView(image_view);
         _device.destroySwapchainKHR(_swapchain);
+        depth_resource_destroy();
 
 
         /// 重新创建 swapchain
         _surface_info       = SurfaceInfo::get_info(_physical_device, _surface, _window);
+        _env.surface_info   = _surface_info;
         _swapchain          = create_swapchain(_device, _surface, _device_info, _surface_info);
         _swapchain_img_list = _device.getSwapchainImagesKHR(_swapchain);
         _swapchain_img_view_list =
                 create_swapchain_view(_device, _surface_info, _swapchain_img_list);
-        _render_pass = create_render_pass(_device, _surface_info);
+        _render_pass = create_render_pass(_env);
         _graphics_pipeline =
                 create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
+        depth_resource_create(_env, _depth_img, _depth_mem, _depth_img_view);
         _swapchain_framebuffer_list =
-                create_framebuffers(_device, _surface_info, _swapchain_img_view_list, _render_pass);
+                create_framebuffers(_env, _render_pass, _swapchain_img_view_list, _depth_img_view);
     }
 
 
@@ -456,5 +490,13 @@ private:
                               .flags = vk::FenceCreateFlagBits::eSignaled,
             });
         }
+    }
+
+
+    void depth_resource_destroy()
+    {
+        _device.destroyImageView(_depth_img_view);
+        _device.freeMemory(_depth_mem);
+        _device.destroyImage(_depth_img);
     }
 };

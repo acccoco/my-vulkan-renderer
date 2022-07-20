@@ -92,9 +92,9 @@ void create_uniform_buffer(const vk::Device &device, const DeviceInfo &device_in
 
 
 std::vector<vk::Framebuffer>
-create_framebuffers(const vk::Device &device, const SurfaceInfo &surface_info,
+create_framebuffers(const Env &env, const vk::RenderPass &render_pass,
                     const std::vector<vk::ImageView> &swapchain_image_view_list,
-                    const vk::RenderPass &render_pass);
+                    const vk::ImageView &depth_img_view);
 
 
 vk::DescriptorPool create_descriptor_pool(const vk::Device &device, uint32_t frames_in_flight);
@@ -118,7 +118,7 @@ std::vector<vk::CommandBuffer> create_command_buffer(const vk::Device &device,
  * 创建 image 和对应的 memory，并将两者绑定
  */
 void create_image(const vk::Device &device, const DeviceInfo &device_info,
-                  const vk::ImageCreateInfo &image_info, const vk::ImageUsageFlags &image_usage,
+                  const vk::ImageCreateInfo &image_info,
                   const vk::MemoryPropertyFlags &mem_properties, vk::Image &image,
                   vk::DeviceMemory &memory);
 
@@ -132,22 +132,25 @@ void create_tex_image(const vk::Device &device, const DeviceInfo &device_info,
                       const std::string &file_path, vk::Image &tex_image,
                       vk::DeviceMemory &tex_memory);
 
-
-/**
- * 使用 image memory barrier 来转换 image layout
- */
-void trans_image_layout(const vk::Device &device, const vk::Queue &trans_queue,
-                        const vk::CommandPool &cmd_pool, vk::Image &image, const vk::Format &format,
-                        const vk::ImageLayout &old_layout, const vk::ImageLayout &new_layout);
-
+void img_layout_trans(const vk::Device &device, const vk::Queue &trans_queue,
+                      const vk::CommandPool &cmd_pool, vk::Image &image, const vk::Format &format,
+                      const vk::ImageLayout &old_layout, const vk::ImageLayout &new_layout);
 
 void buffer_image_copy(const vk::Device &device, const vk::Queue &trans_queue,
                        const vk::CommandPool &cmd_pool, vk::Buffer &buffer, vk::Image &image,
                        uint32_t width, uint32_t height);
 
-
 vk::ImageView img_view_create(const vk::Device &device, const vk::Image &tex_img,
-                              const vk::Format &format);
-
+                              const vk::Format &format, const vk::ImageAspectFlags &aspect_flags);
 
 vk::Sampler sampler_create(const vk::Device &device, const DeviceInfo &device_info);
+
+vk::Format supported_format_find(const Env &env, const std::vector<vk::Format> &candidates,
+                                 vk::ImageTiling tiling, vk::FormatFeatureFlags features);
+
+vk::Format depth_format(const Env &env);
+
+bool stencil_component_has(const vk::Format &format);
+
+void depth_resource_create(const Env &env, vk::Image &img, vk::DeviceMemory &mem,
+                           vk::ImageView &img_view);

@@ -12,7 +12,12 @@
 #include <GLFW/glfw3.h>
 
 #define GLM_FORCE_RADIANS
+// 透视投影矩阵生成的深度范围是 [-1.0, 1.0]，这里可以将其改成 [0.0, 1.0]
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <stb_image.h>
+
+
+#define BITS_CONTAIN(bits_a, bits_b) ((bits_a & bits_b) == bits_b)

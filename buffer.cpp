@@ -124,30 +124,33 @@ void create_uniform_buffer(const vk::Device &device, const DeviceInfo &device_in
 
 
 std::vector<vk::Framebuffer>
-create_framebuffers(const vk::Device &device, const SurfaceInfo &surface_info,
+create_framebuffers(const Env &env, const vk::RenderPass &render_pass,
                     const std::vector<vk::ImageView> &swapchain_image_view_list,
-                    const vk::RenderPass &render_pass)
+                    const vk::ImageView &depth_img_view)
 {
     spdlog::get("logger")->info("create framebuffers.");
-    std::vector<vk::Framebuffer> swapchain_framebuffer_list;
-    swapchain_framebuffer_list.resize(swapchain_image_view_list.size());
-    for (size_t i = 0; i < swapchain_image_view_list.size(); ++i)
+
+    std::vector<vk::Framebuffer> framebuffer_list;
+    framebuffer_list.reserve(swapchain_image_view_list.size());
+    for (const vk::ImageView &swapchain_img_view: swapchain_image_view_list)
     {
-        vk::ImageView attachments[] = {
-                swapchain_image_view_list[i],
+        std::vector<vk::ImageView> attachments = {
+                swapchain_img_view,
+                depth_img_view,
         };
+
         vk::FramebufferCreateInfo framebuffer_create_info = {
                 .renderPass      = render_pass,
-                .attachmentCount = 1,
-                .pAttachments    = attachments,
-                .width           = surface_info.extent.width,
-                .height          = surface_info.extent.height,
+                .attachmentCount = static_cast<uint32_t>(attachments.size()),
+                .pAttachments    = attachments.data(),
+                .width           = env.surface_info.extent.width,
+                .height          = env.surface_info.extent.height,
                 .layers          = 1,
         };
 
-        swapchain_framebuffer_list[i] = device.createFramebuffer(framebuffer_create_info);
+        framebuffer_list.push_back(env.device.createFramebuffer(framebuffer_create_info));
     }
-    return swapchain_framebuffer_list;
+    return framebuffer_list;
 }
 
 
@@ -228,7 +231,7 @@ std::vector<vk::CommandBuffer> create_command_buffer(const vk::Device &device,
 
 
 void create_image(const vk::Device &device, const DeviceInfo &device_info,
-                  const vk::ImageCreateInfo &image_info, const vk::ImageUsageFlags &image_usage,
+                  const vk::ImageCreateInfo &image_info,
                   const vk::MemoryPropertyFlags &mem_properties, vk::Image &image,
                   vk::DeviceMemory &memory)
 {
@@ -289,19 +292,17 @@ void create_tex_image(const vk::Device &device, const DeviceInfo &device_info,
             .sharingMode = vk::SharingMode::eExclusive,
             .initialLayout = vk::ImageLayout::eUndefined,
     };
-    create_image(device, device_info, image_info,
-                 vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-                 vk::MemoryPropertyFlagBits::eDeviceLocal, tex_image, tex_memory);
+    create_image(device, device_info, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal,
+                 tex_image, tex_memory);
 
 
     /* stage buffer -> image */
-    trans_image_layout(device, trans_queue, cmd_pool, tex_image, vk::Format::eR8G8B8A8Srgb,
-                       vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+    img_layout_trans(device, trans_queue, cmd_pool, tex_image, vk::Format::eR8G8B8A8Srgb,
+                     vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
     buffer_image_copy(device, trans_queue, cmd_pool, stage_buffer, tex_image,
                       static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-    trans_image_layout(device, trans_queue, cmd_pool, tex_image, vk::Format::eR8G8B8A8Srgb,
-                       vk::ImageLayout::eTransferDstOptimal,
-                       vk::ImageLayout::eShaderReadOnlyOptimal);
+    img_layout_trans(device, trans_queue, cmd_pool, tex_image, vk::Format::eR8G8B8A8Srgb,
+                     vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 
 
     // free resource
@@ -311,15 +312,21 @@ void create_tex_image(const vk::Device &device, const DeviceInfo &device_info,
 }
 
 
-void trans_image_layout(const vk::Device &device, const vk::Queue &trans_queue,
-                        const vk::CommandPool &cmd_pool, vk::Image &image, const vk::Format &format,
-                        const vk::ImageLayout &old_layout, const vk::ImageLayout &new_layout)
+/**
+ * 使用 image memory barrier 来转换 image layout
+ */
+void img_layout_trans(const vk::Device &device, const vk::Queue &trans_queue,
+                      const vk::CommandPool &cmd_pool, vk::Image &image, const vk::Format &format,
+                      const vk::ImageLayout &old_layout, const vk::ImageLayout &new_layout)
 {
-    OneTimeCmdBuffer cmd(device, trans_queue, cmd_pool);
+    vk::ImageAspectFlags aspect_flags = vk::ImageAspectFlagBits::eColor;
+    if (new_layout == vk::ImageLayout::eDepthStencilAttachmentOptimal)
+    {
+        aspect_flags = vk::ImageAspectFlagBits::eDepth;
+        if (stencil_component_has(format))
+            aspect_flags |= vk::ImageAspectFlagBits::eStencil;
+    }
 
-
-    vk::PipelineStageFlags src_stage;
-    vk::PipelineStageFlags dst_stage;
 
     // barrier 有三个作用：synchronize, layout 转换, queue family ownership
     vk::ImageMemoryBarrier barrier = {
@@ -336,13 +343,18 @@ void trans_image_layout(const vk::Device &device, const vk::Queue &trans_queue,
             // 图像的哪些区域会受影响
             .subresourceRange =
                     vk::ImageSubresourceRange{
-                            .aspectMask     = vk::ImageAspectFlagBits::eColor,
+                            .aspectMask     = aspect_flags,
                             .baseMipLevel   = 0,
                             .levelCount     = 1,
                             .baseArrayLayer = 0,
                             .layerCount     = 1,
                     },
     };
+
+
+    vk::PipelineStageFlags src_stage;
+    vk::PipelineStageFlags dst_stage;
+
     if (old_layout == vk::ImageLayout::eUndefined &&
         new_layout == vk::ImageLayout::eTransferDstOptimal)
     {
@@ -360,13 +372,31 @@ void trans_image_layout(const vk::Device &device, const vk::Queue &trans_queue,
 
         src_stage = vk::PipelineStageFlagBits::eTransfer;
         dst_stage = vk::PipelineStageFlagBits::eFragmentShader;
-    } else
+    } else if (old_layout == vk::ImageLayout::eUndefined &&
+               new_layout == vk::ImageLayout::eDepthStencilAttachmentOptimal)
+    {
+        barrier.srcAccessMask = {};
+        barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead |
+                                vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+
+        src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
+
+        /**
+         * depth buffer 在 early fragment test 阶段被 read，在 late fragment test 阶段发生 write
+         * 取最早的 stage
+         * FIXME 按我的理解，layout transition 应该是马上发生(one time cmd)，这里指定 dst stage 是否有必要呢？
+         */
+        dst_stage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    }
+
+    else
         throw std::invalid_argument("unsupported layout transition!");
 
+
+    OneTimeCmdBuffer cmd(device, trans_queue, cmd_pool);
     // 前三个参数：src 和 dst 的 pipeline stage；xxx
     // 后三个参数：三种 barrier 的 list
     cmd().pipelineBarrier(src_stage, dst_stage, {}, {}, {}, {barrier});
-
     cmd.end();
 }
 
@@ -405,20 +435,17 @@ void buffer_image_copy(const vk::Device &device, const vk::Queue &trans_queue,
 
 
 vk::ImageView img_view_create(const vk::Device &device, const vk::Image &tex_img,
-                              const vk::Format &format)
+                              const vk::Format &format, const vk::ImageAspectFlags &aspect_flags)
 {
     vk::ImageViewCreateInfo view_info = {
-            .image    = tex_img,
-            .viewType = vk::ImageViewType::e2D,
-            .format   = format,
-            .subresourceRange =
-                    vk::ImageSubresourceRange{
-                            .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                            .baseMipLevel   = 0,
-                            .levelCount     = 1,
-                            .baseArrayLayer = 0,
-                            .layerCount     = 1,
-                    },
+            .image            = tex_img,
+            .viewType         = vk::ImageViewType::e2D,
+            .format           = format,
+            .subresourceRange = {.aspectMask     = aspect_flags,
+                                 .baseMipLevel   = 0,
+                                 .levelCount     = 1,
+                                 .baseArrayLayer = 0,
+                                 .layerCount     = 1},
     };
 
     return device.createImageView(view_info);
@@ -452,4 +479,87 @@ vk::Sampler sampler_create(const vk::Device &device, const DeviceInfo &device_in
             .unnormalizedCoordinates = VK_FALSE,
     };
     return device.createSampler(sampler_info);
+}
+
+
+/**
+ * 根据 tiling 和 features 找到合适的 format
+ * @param candidates 候选的 format
+ */
+vk::Format supported_format_find(const Env &env, const std::vector<vk::Format> &candidates,
+                                 vk::ImageTiling tiling, vk::FormatFeatureFlags features)
+{
+    for (const vk::Format &format: candidates)
+    {
+        vk::FormatProperties props = env.physical_device.getFormatProperties(format);
+
+        if (tiling == vk::ImageTiling::eLinear &&
+            BITS_CONTAIN(props.linearTilingFeatures, features))
+            return format;
+        if (tiling == vk::ImageTiling::eOptimal &&
+            BITS_CONTAIN(props.optimalTilingFeatures, features))
+            return format;
+    }
+    throw std::runtime_error("failed to find supported format.");
+}
+
+
+/**
+ * depth format 中是否包含 stencil
+ */
+bool stencil_component_has(const vk::Format &format)
+{
+    return format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint;
+}
+
+
+/**
+ * 选择 device 支持的 depth format
+ */
+vk::Format depth_format(const Env &env)
+{
+    const std::vector<vk::Format> candidata_format = {
+            vk::Format::eD32Sfloat,
+            vk::Format::eD32SfloatS8Uint,
+            vk::Format::eD24UnormS8Uint,
+    };
+    return supported_format_find(env, candidata_format, vk::ImageTiling::eOptimal,
+                                 vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+}
+
+
+void depth_resource_create(const Env &env, vk::Image &img, vk::DeviceMemory &mem,
+                           vk::ImageView &img_view)
+{
+    const std::vector<vk::Format> candidata_format = {
+            vk::Format::eD32Sfloat,
+            vk::Format::eD32SfloatS8Uint,
+            vk::Format::eD24UnormS8Uint,
+    };
+    vk::Format depth_format =
+            supported_format_find(env, candidata_format, vk::ImageTiling::eOptimal,
+                                  vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+
+    vk::ImageCreateInfo img_info = {
+            .imageType     = vk::ImageType::e2D,
+            .format        = depth_format,
+            .extent        = vk::Extent3D{.width  = (uint32_t) (env.surface_info.extent.width),
+                                          .height = (uint32_t) (env.surface_info.extent.height),
+                                          .depth  = 1},
+            .mipLevels     = 1,
+            .arrayLayers   = 1,
+            .samples       = vk::SampleCountFlagBits::e1,
+            .tiling        = vk::ImageTiling::eOptimal,
+            .usage         = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            .sharingMode   = vk::SharingMode::eExclusive,
+            .initialLayout = vk::ImageLayout::eUndefined,
+    };
+
+    create_image(env.device, env.device_info, img_info, vk::MemoryPropertyFlagBits::eDeviceLocal,
+                 img, mem);
+    img_view = img_view_create(env.device, img, depth_format, vk::ImageAspectFlagBits::eDepth);
+
+    // 这一步是可选的，在 render pass 中会做
+    img_layout_trans(env.device, env.graphics_queue, env.cmd_pool, img, depth_format,
+                     vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 }

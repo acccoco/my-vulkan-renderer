@@ -1,4 +1,12 @@
+# cmake
 cmake-build-debug
 build
+
+# macos
 .DS_Store
+
+# ide
 .idea
+
+# spir-v shader
+*.spv
