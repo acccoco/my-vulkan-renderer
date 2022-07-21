@@ -14,8 +14,11 @@
 #define GLM_FORCE_RADIANS
 // 透视投影矩阵生成的深度范围是 [-1.0, 1.0]，这里可以将其改成 [0.0, 1.0]
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+/* 让 glm 的类型支持 std::hash<...>() */
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/hash.hpp>
 
 #include <stb_image.h>
 

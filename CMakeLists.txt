@@ -28,12 +28,14 @@ find_package(glfw3 REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(TinyGLTF REQUIRED HINTS ./ext/tinyGLTF)
+find_package(TinyObjLoader REQUIRED HINTS ./ext/tinyobj)
 set(libs
         glm::glm
         glfw
         Vulkan::Vulkan
         spdlog::spdlog
         TinyGLTF
+        TinyObjLoader
         )
 
 

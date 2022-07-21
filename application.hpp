@@ -13,6 +13,7 @@
 
 #include "./buffer.hpp"
 #include "./render_pass.hpp"
+#include "./model.hpp"
 #include "env.hpp"
 
 
@@ -27,7 +28,7 @@ const uint32_t HEIGHT = 600;
 
 
 //
-std::vector<uint16_t> indices = {
+std::vector<uint32_t> indices = {
         0, 1, 2, 2, 3, 0,
 
         4, 5, 6, 6, 7, 4,
@@ -35,11 +36,11 @@ std::vector<uint16_t> indices = {
 
 
 // 三角形的顶点数据
-const std::vector<Vertex> vertices = {
+std::vector<Vertex> vertices = {
         {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
         {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.f, .5f}},
+        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, .5f}},
 
         {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
         {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
@@ -192,6 +193,8 @@ private:
     vk::DeviceMemory _depth_mem;
     vk::ImageView _depth_img_view;
 
+    TestModel model;
+
 
 #pragma endregion
 
@@ -259,7 +262,7 @@ private:
             create_uniform_buffer(_device, _device_info, _uniform_buffers[i], _uniform_memories[i]);
 
         create_tex_image(_device, _device_info, _graphics_queue, _command_pool,
-                         std::string(tex_dir) + "/head.jpg", _tex_image, _tex_memory);
+                         std::string(tex_dir) + "/viking_room.png", _tex_image, _tex_memory);
         _tex_img_view = img_view_create(_device, _tex_image, vk::Format::eR8G8B8A8Srgb,
                                         vk::ImageAspectFlagBits::eColor);
         _tex_sampler  = sampler_create(_device, _device_info);
@@ -268,6 +271,8 @@ private:
         _descriptor_sets = create_descriptor_set(_device, _descriptor_set_layout, _descriptor_pool,
                                                  MAX_FRAMES_IN_FLIGHT, _uniform_buffers,
                                                  _tex_img_view, _tex_sampler);
+
+        model.model_load(_env);
     }
 
 
@@ -298,6 +303,8 @@ private:
         _device.destroyDescriptorPool(_descriptor_pool);
         _device.destroyCommandPool(_command_pool);
         depth_resource_destroy();
+
+        model.resource_free(_env);
 
 
         // render pass
@@ -372,12 +379,12 @@ private:
         cur_cmd_buffer.reset();
         cur_cmd_buffer.begin(vk::CommandBufferBeginInfo{});
         cur_cmd_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
-        cur_cmd_buffer.bindVertexBuffers(0, {_vertex_buffer}, {0});
-        cur_cmd_buffer.bindIndexBuffer(_index_buffer, 0, vk::IndexType::eUint16);
+        cur_cmd_buffer.bindVertexBuffers(0, {model.vertex_buffer()}, {0});
+        cur_cmd_buffer.bindIndexBuffer(model.index_buffer(), 0, vk::IndexType::eUint32);
         cur_cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _graphics_pipeline);
         cur_cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _pipeline_layout, 0,
                                           {_descriptor_sets[_current_frame_idx]}, {});
-        cur_cmd_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+        cur_cmd_buffer.drawIndexed(static_cast<uint32_t>(model.index_cnt()), 1, 0, 0, 0);
         cur_cmd_buffer.endRenderPass();
         cur_cmd_buffer.end();
 

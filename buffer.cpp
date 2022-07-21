@@ -32,7 +32,7 @@ void create_buffer(const vk::Device &device, const DeviceInfo &device_info, vk::
 
 void create_index_buffer(const vk::Device &device, const DeviceInfo &device_info,
                          const vk::CommandPool &cmd_pool, const vk::Queue &transfer_queue,
-                         const std::vector<uint16_t> &indices, vk::Buffer &index_buffer,
+                         const std::vector<uint32_t> &indices, vk::Buffer &index_buffer,
                          vk::DeviceMemory &index_memory)
 {
     spdlog::get("logger")->info("create index buffer.");
@@ -200,8 +200,8 @@ void update_uniform_memory(const vk::Device &device, const SurfaceInfo &surface_
 
     UniformBufferObject ubo = {
             .model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f),
-                                 glm::vec3(0.f, 0.f, 1.f)),
-            .view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f), glm::vec3(0.f, 0.f, 1.f)),
+                                 glm::vec3(0.f, 1.f, 0.f)),
+            .view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f), glm::vec3(0.f, 1.f, 0.f)),
             .proj = glm::perspective(glm::radians(45.f),
                                      (float) surface_info.extent.width /
                                              (float) surface_info.extent.height,

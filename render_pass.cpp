@@ -270,11 +270,13 @@ vk::Pipeline create_pipeline(const vk::Device &device, const SurfaceInfo &surfac
     };
 
 
-    /// 分别为每个 color attachment 指定 blend 设置
-    /// 混合方法如下：https://vulkan-tutorial.com/en/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
-    /// final_color.rgb = (new_color.rgb * src_blend_factor) <op> (old_color.rgb * dst_blend_factor)
-    /// final_color.a = (new_color.a * src_alpha_factor) <op> (old_color.a * dst_alpha_factor)
-    /// final_color = final_color & color_write_mask
+    /**
+     * 分别为每个 color attachment 指定 blend 设置
+     * 混合方法如下：https://vulkan-tutorial.com/en/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
+     * final_color.rgb = (new_color.rgb * src_blend_factor) <op> (old_color.rgb * dst_blend_factor)
+     * final_color.a = (new_color.a * src_alpha_factor) <op> (old_color.a * dst_alpha_factor)
+     * final_color = final_color & color_write_mask
+     */
     vk::PipelineColorBlendAttachmentState color_blend_attachment = {
             .blendEnable = VK_FALSE,    // blend 的开关
 

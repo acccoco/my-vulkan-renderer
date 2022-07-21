@@ -74,7 +74,7 @@ void create_buffer(const vk::Device &device, const DeviceInfo &device_info, vk::
  */
 void create_index_buffer(const vk::Device &device, const DeviceInfo &device_info,
                          const vk::CommandPool &cmd_pool, const vk::Queue &transfer_queue,
-                         const std::vector<uint16_t> &indices, vk::Buffer &index_buffer,
+                         const std::vector<uint32_t> &indices, vk::Buffer &index_buffer,
                          vk::DeviceMemory &index_memory);
 
 
