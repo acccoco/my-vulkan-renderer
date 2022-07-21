@@ -1,5 +1,6 @@
-#include "./device.hpp"
-#include "./buffer.hpp"
+#include "../device.hpp"
+#include "../buffer.hpp"
+#include "../image.hpp"
 
 
 /**
@@ -305,16 +306,15 @@ vk::SwapchainKHR create_swapchain(const vk::Device &device, const vk::SurfaceKHR
 }
 
 
-std::vector<vk::ImageView> create_swapchain_view(const vk::Device &device,
-                                                 const SurfaceInfo &surface_info,
+std::vector<vk::ImageView> create_swapchain_view(const Env &env,
                                                  const std::vector<vk::Image> &image_list)
 {
     spdlog::get("logger")->info("create swapchain view.");
     std::vector<vk::ImageView> view_list;
 
     for (const vk::Image &image: image_list)
-        view_list.push_back(img_view_create(device, image, surface_info.format.format,
-                                            vk::ImageAspectFlagBits::eColor));
+        view_list.push_back(img_view_create(env, image, env.surface_info.format.format,
+                                            vk::ImageAspectFlagBits::eColor, 1));
 
     return view_list;
 }

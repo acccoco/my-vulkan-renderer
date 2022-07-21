@@ -11,9 +11,12 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-#include "./buffer.hpp"
-#include "./render_pass.hpp"
-#include "./model.hpp"
+#include "core/buffer.hpp"
+#include "core/render_pass.hpp"
+#include "core/model.hpp"
+#include "core/texture.hpp"
+#include "core/vertex.hpp"
+#include "core/framebuffer.hpp"
 #include "env.hpp"
 
 
@@ -183,10 +186,6 @@ private:
     vk::DeviceMemory _index_memory;
     std::vector<vk::Buffer> _uniform_buffers;
     std::vector<vk::DeviceMemory> _uniform_memories;
-    vk::Image _tex_image;
-    vk::ImageView _tex_img_view;
-    vk::Sampler _tex_sampler;
-    vk::DeviceMemory _tex_memory;
     vk::DescriptorPool _descriptor_pool;
     std::vector<vk::DescriptorSet> _descriptor_sets;
     vk::Image _depth_img;
@@ -194,6 +193,7 @@ private:
     vk::ImageView _depth_img_view;
 
     TestModel model;
+    Texture _tex;
 
 
 #pragma endregion
@@ -231,10 +231,9 @@ private:
 
 
         // swapchain 相关
-        _swapchain          = create_swapchain(_device, _surface, _device_info, _surface_info);
-        _swapchain_img_list = _device.getSwapchainImagesKHR(_swapchain);
-        _swapchain_img_view_list =
-                create_swapchain_view(_device, _surface_info, _swapchain_img_list);
+        _swapchain               = create_swapchain(_device, _surface, _device_info, _surface_info);
+        _swapchain_img_list      = _device.getSwapchainImagesKHR(_swapchain);
+        _swapchain_img_view_list = create_swapchain_view(_env, _swapchain_img_list);
         logger->info("swapchain image count: {}", _swapchain_img_list.size());
 
 
@@ -261,16 +260,13 @@ private:
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
             create_uniform_buffer(_device, _device_info, _uniform_buffers[i], _uniform_memories[i]);
 
-        create_tex_image(_device, _device_info, _graphics_queue, _command_pool,
-                         std::string(tex_dir) + "/viking_room.png", _tex_image, _tex_memory);
-        _tex_img_view = img_view_create(_device, _tex_image, vk::Format::eR8G8B8A8Srgb,
-                                        vk::ImageAspectFlagBits::eColor);
-        _tex_sampler  = sampler_create(_device, _device_info);
+        _tex = Texture::load(_env, std::string(tex_dir) + "/viking_room.png",
+                             vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
 
         _descriptor_pool = create_descriptor_pool(_device, MAX_FRAMES_IN_FLIGHT);
         _descriptor_sets = create_descriptor_set(_device, _descriptor_set_layout, _descriptor_pool,
                                                  MAX_FRAMES_IN_FLIGHT, _uniform_buffers,
-                                                 _tex_img_view, _tex_sampler);
+                                                 _tex.img_view(), _tex.sampler());
 
         model.model_load(_env);
     }
@@ -287,7 +283,6 @@ private:
 
 
         // 各种 buffer
-        _device.destroySampler(_tex_sampler);
         _device.destroyBuffer(_vertex_buffer);
         _device.free(_vertex_memory);
         _device.destroyBuffer(_index_buffer);
@@ -297,9 +292,7 @@ private:
             _device.destroyBuffer(_uniform_buffers[i]);
             _device.free(_uniform_memories[i]);
         }
-        _device.destroyImageView(_tex_img_view);
-        _device.destroyImage(_tex_image);
-        _device.freeMemory(_tex_memory);
+        _tex.free(_env);
         _device.destroyDescriptorPool(_descriptor_pool);
         _device.destroyCommandPool(_command_pool);
         depth_resource_destroy();
@@ -466,13 +459,12 @@ private:
 
 
         /// 重新创建 swapchain
-        _surface_info       = SurfaceInfo::get_info(_physical_device, _surface, _window);
-        _env.surface_info   = _surface_info;
-        _swapchain          = create_swapchain(_device, _surface, _device_info, _surface_info);
-        _swapchain_img_list = _device.getSwapchainImagesKHR(_swapchain);
-        _swapchain_img_view_list =
-                create_swapchain_view(_device, _surface_info, _swapchain_img_list);
-        _render_pass = create_render_pass(_env);
+        _surface_info            = SurfaceInfo::get_info(_physical_device, _surface, _window);
+        _env.surface_info        = _surface_info;
+        _swapchain               = create_swapchain(_device, _surface, _device_info, _surface_info);
+        _swapchain_img_list      = _device.getSwapchainImagesKHR(_swapchain);
+        _swapchain_img_view_list = create_swapchain_view(_env, _swapchain_img_list);
+        _render_pass             = create_render_pass(_env);
         _graphics_pipeline =
                 create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
         depth_resource_create(_env, _depth_img, _depth_mem, _depth_img_view);

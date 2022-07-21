@@ -43,10 +43,16 @@ public:
             for (const auto &index: shape.mesh.indices)
             {
                 Vertex vertex = {
-                        .pos       = {attr.vertices[3 * index.vertex_index + 0],
-                                      attr.vertices[3 * index.vertex_index + 1],
-                                      attr.vertices[3 * index.vertex_index + 2]},
-                        .color     = {1.f, 1.f, 1.f},
+                        .pos   = {attr.vertices[3 * index.vertex_index + 0],
+                                  attr.vertices[3 * index.vertex_index + 1],
+                                  attr.vertices[3 * index.vertex_index + 2]},
+                        .color = {1.f, 1.f, 1.f},
+
+                        /**
+                         * stbi 将 picture 左上角视为 data[0]，
+                         * vulkan 将 data[0] 视为 texture 的左上角，
+                         * .obj 文件将 picture 左下角视为 uv 的起点，因此 tex coord 的 v 需要做如下变换
+                         */
                         .tex_coord = {attr.texcoords[2 * index.texcoord_index + 0],
                                       1.f - attr.texcoords[2 * index.texcoord_index + 1]},
                 };

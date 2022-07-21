@@ -66,10 +66,14 @@ target_link_libraries(test ${libs})
 set(source
         ${shader_dir}/triangle.vert.spv
         ${shader_dir}/triangle.frag.spv
-        vk.cpp
-        buffer.cpp
-        device.cpp
-        render_pass.cpp
+        main.cpp
+        core/src/buffer.cpp
+        core/src/device.cpp
+        core/src/render_pass.cpp
+        core/src/image.cpp
+        core/src/framebuffer.cpp
+        core/src/vertex.cpp
+        core/src/texture.cpp
         )
 add_executable(VK ${source})
 target_link_libraries(VK ${libs})
