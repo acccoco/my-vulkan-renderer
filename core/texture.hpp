@@ -16,16 +16,16 @@ class Texture
     uint32_t _mip_levels{};
 
 
-    void img_init(const Env &env, const std::string &file_path);
+    void img_init(const std::string &file_path);
 
 public:
-    static Texture load(const Env &env, const std::string &file_path, const vk::Format &format,
+    static Texture load(const std::string &file_path, const vk::Format &format,
                         const vk::ImageAspectFlags &aspect)
     {
         Texture tex;
-        tex.img_init(env, file_path);
-        tex._img_view = img_view_create(env, tex._img, format, aspect, tex._mip_levels);
-        tex._sampler  = sampler_create(env, tex._mip_levels);
+        tex.img_init(file_path);
+        tex._img_view = img_view_create(tex._img, format, aspect, tex._mip_levels);
+        tex._sampler  = sampler_create(tex._mip_levels);
 
         return tex;
     }
@@ -34,11 +34,12 @@ public:
     vk::Sampler &sampler() { return _sampler; }
 
 
-    void free(const Env &env)
+    void free()
     {
-        env.device.destroy(_img_view);
-        env.device.destroy(_img);
-        env.device.destroy(_sampler);
-        env.device.free(_img_mem);
+        auto env = EnvSingleton::env();
+        env->device.destroy(_img_view);
+        env->device.destroy(_img);
+        env->device.destroy(_sampler);
+        env->device.free(_img_mem);
     }
 };

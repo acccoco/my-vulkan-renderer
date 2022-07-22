@@ -8,21 +8,17 @@
 #include <sstream>
 #include <algorithm>
 
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 
-#include "core/buffer.hpp"
-#include "core/render_pass.hpp"
+#include "profile.hpp"
 #include "core/model.hpp"
-#include "core/texture.hpp"
+#include "core/frames.hpp"
+#include "core/global.hpp"
+#include "core/buffer.hpp"
 #include "core/vertex.hpp"
+#include "core/texture.hpp"
+#include "core/swapchain.hpp"
+#include "core/render_pass.hpp"
 #include "core/framebuffer.hpp"
-#include "env.hpp"
-
-
-/// 用于查找函数地址的 dispatcher，vulkan hpp 提供了一个默认的
-/// 这是变量定义的位置，vulkan.hpp 会通过 extern 引用这个全局变量
-VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE;
 
 
 // 窗口的尺寸，单位不是 pixel
@@ -57,121 +53,39 @@ class Application
 public:
     void run()
     {
-        init_spdlog();
-        _window = init_window(WIDTH, HEIGHT, glfw_user_data);
+        LogStatic::init();
+        WindowStatic::init(WIDTH, HEIGHT);
 
         init_application();
 
         // main loop
-        while (!glfwWindowShouldClose(_window))
+        while (!glfwWindowShouldClose(WindowStatic::window_get()))
         {
             glfwPollEvents();
-            if (glfwGetKey(_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-                glfwSetWindowShouldClose(_window, true);
+            if (glfwGetKey(WindowStatic::window_get(), GLFW_KEY_ESCAPE) == GLFW_PRESS)
+                glfwSetWindowShouldClose(WindowStatic::window_get(), true);
             draw();
         }
 
 
-        _device.waitIdle();
+        EnvSingleton::env()->device.waitIdle();
 
 
         cleanup();
-        glfwDestroyWindow(_window);
-        glfwTerminate();
+        WindowStatic::close();
     }
 
 
 private:
-#pragma region debug_logger
-
-    inline static std::shared_ptr<spdlog::logger> logger;
-    inline static std::shared_ptr<spdlog::logger> val_logger;
-
-    static void init_spdlog()
-    {
-        logger = spdlog::stdout_color_st("logger");
-        logger->set_level(spdlog::level::trace);
-        logger->set_pattern("[%^%L%$] %v");
-
-
-        val_logger = spdlog::stdout_color_st("validation");
-        val_logger->set_level(spdlog::level::trace);
-        val_logger->set_pattern("[%^%n%$] %v");
-    }
-
-    const vk::DebugUtilsMessengerCreateInfoEXT _dbg_msg_info = {
-            .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-                               vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-                               vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-            .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                           vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-                           vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-            .pfnUserCallback = debug_callback,
-            .pUserData       = nullptr,
-    };
-
-    static vk::Bool32 debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-                                     VkDebugUtilsMessageTypeFlagsEXT message_type,
-                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
-                                     void *)
-    {
-        const char *type;
-        switch (static_cast<vk::DebugUtilsMessageTypeFlagBitsEXT>(message_type))
-        {
-            case vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral: type = "General"; break;
-            case vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation: type = "Validation"; break;
-            case vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance: type = "Performance"; break;
-            default: type = "?";
-        }
-
-        switch (message_severity)
-        {
-            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-                val_logger->warn("[{}]: {}", type, callback_data->pMessage);
-                break;
-            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-                val_logger->error("[{}]: {}", type, callback_data->pMessage);
-                break;
-            default: val_logger->info("[{}]: {}", type, callback_data->pMessage);
-        }
-
-        return VK_FALSE;
-    }
-#pragma endregion
-
-
 #pragma region members
-    static const int MAX_FRAMES_IN_FLIGHT = 2;    // 最多允许同时处理多少帧
-    uint32_t _current_frame_idx           = 0;
-
+    static constexpr uint32_t MAX_FRAMES_INFLIGHT = 2;
 
     vk::Instance _instance;
-    vk::DebugUtilsMessengerEXT _dbg_msg;
-    vk::PhysicalDevice _physical_device;
-    vk::Device _device;
-    DeviceInfo _device_info;
-    vk::SurfaceKHR _surface;
-    SurfaceInfo _surface_info;
-    vk::Queue _graphics_queue;
-    vk::Queue _present_queue;
-    vk::CommandPool _command_pool;
-    std::vector<vk::CommandBuffer> _cmd_buffers;
-    Env _env;
+    std::shared_ptr<Swapchain> _swapchain;
+    std::shared_ptr<MSAAFramebuffer> _framebuffer;
 
-
-    GLFWwindow *_window;
-    GLFWUserData glfw_user_data;
-
-
-    vk::SwapchainKHR _swapchain;
-    std::vector<vk::Framebuffer> _swapchain_framebuffer_list;
-    std::vector<vk::Image> _swapchain_img_list;    // created by swapchain, destroied by swapchain
-    std::vector<vk::ImageView> _swapchain_img_view_list;
-
-
-    std::vector<vk::Semaphore> _image_available_semaphores;
-    std::vector<vk::Semaphore> _render_finish_semaphores;
-    std::vector<vk::Fence> _in_flight_fences;
+    /* 控制 GPU 最多可以同时处理多少 frames */
+    std::shared_ptr<FramesInflight<MAX_FRAMES_INFLIGHT>> _inflight;
 
 
     vk::RenderPass _render_pass;
@@ -184,16 +98,15 @@ private:
     vk::DeviceMemory _vertex_memory;
     vk::Buffer _index_buffer;
     vk::DeviceMemory _index_memory;
-    std::vector<vk::Buffer> _uniform_buffers;
-    std::vector<vk::DeviceMemory> _uniform_memories;
     vk::DescriptorPool _descriptor_pool;
     std::vector<vk::DescriptorSet> _descriptor_sets;
-    vk::Image _depth_img;
-    vk::DeviceMemory _depth_mem;
-    vk::ImageView _depth_img_view;
+
 
     TestModel model;
     Texture _tex;
+
+
+    FramebufferLayout_temp _framebuffer_layout;
 
 
 #pragma endregion
@@ -202,130 +115,110 @@ private:
     void init_application()
     {
         VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
-        _instance = create_instance(_dbg_msg_info);
+        _instance = instance_create(DebugUtils::dbg_msg_info);
         VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
+        DebugUtils::msger_init(_instance);
 
 
-        _dbg_msg = set_dbg_msger(_instance, _dbg_msg_info);
+        /* device 相关 */
+        EnvSingleton::init_once(_instance);
+        auto env   = EnvSingleton::env();
+        _inflight  = FramesInflight<MAX_FRAMES_INFLIGHT>::create();
+        _swapchain = Swapchain::create();
 
 
-        // device 相关
-        _surface         = create_surface(_instance, _window);
-        _physical_device = pick_physical_device(_instance, _surface, _window);
-        _device_info     = DeviceInfo::get_info(_physical_device, _surface);
-        _surface_info    = SurfaceInfo::get_info(_physical_device, _surface, _window);
-        _device       = create_device(_physical_device, _surface, _present_queue, _graphics_queue);
-        _command_pool = create_command_pool(_device, _device_info);
-        _cmd_buffers  = create_command_buffer(_device, _command_pool, MAX_FRAMES_IN_FLIGHT);
-        create_sychronization();
-        _env = {
-                .physical_device = _physical_device,
-                .device          = _device,
-                .device_info     = _device_info,
-                .surface         = _surface,
-                .surface_info    = _surface_info,
-                .graphics_queue  = _graphics_queue,
-                .present_queue   = _present_queue,
-                .cmd_pool        = _command_pool,
+        /* framebuffer 的各个 attachment 的格式 */
+        auto depth_format = env->format_filter(
+                {
+                        vk::Format::eD32Sfloat,
+                        vk::Format::eD32SfloatS8Uint,
+                        vk::Format::eD24UnormS8Uint,
+                },
+                vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+        if (!depth_format.has_value())
+            throw std::runtime_error("failed to find supported format.");
+        _framebuffer_layout = FramebufferLayout_temp{
+                .color_format   = env->present_format.format,
+                .color_sample   = env->max_sample_cnt(),
+                .depth_format   = depth_format.value(),
+                .depth_sample   = env->max_sample_cnt(),
+                .resolve_format = _swapchain->format(),
+                .resolve_sample = vk::SampleCountFlagBits::e1,
         };
 
 
-        // swapchain 相关
-        _swapchain               = create_swapchain(_device, _surface, _device_info, _surface_info);
-        _swapchain_img_list      = _device.getSwapchainImagesKHR(_swapchain);
-        _swapchain_img_view_list = create_swapchain_view(_env, _swapchain_img_list);
-        logger->info("swapchain image count: {}", _swapchain_img_list.size());
+        /* render pass 和 pipeline */
+        _descriptor_set_layout = descriptor_set_layout_create();
+        _pipeline_layout       = pipeline_layout_create({_descriptor_set_layout});
+        _render_pass           = render_pass_create(_framebuffer_layout);
+        _graphics_pipeline     = pipeline_create(_pipeline_layout, _render_pass);
 
 
-        // render pass 相关
-        _descriptor_set_layout = create_descriptor_set_layout(_device);
-        _pipeline_layout       = create_pipelien_layout(_device, {_descriptor_set_layout});
-        _render_pass           = create_render_pass(_env);
-        _graphics_pipeline =
-                create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
+        _framebuffer = MSAAFramebuffer::create(_render_pass, _framebuffer_layout,
+                                               _swapchain->img_views(), env->present_extent);
 
 
-        // 各种 buffer
-        depth_resource_create(_env, _depth_img, _depth_mem, _depth_img_view);
-        _swapchain_framebuffer_list =
-                create_framebuffers(_env, _render_pass, _swapchain_img_view_list, _depth_img_view);
+        /* 绘制的对象相关 */
+        vertex_buffer_create(vertices, _vertex_buffer, _vertex_memory);
+        index_buffer_create(indices, _index_buffer, _index_memory);
+        _tex = Texture::load(std::string(tex_dir) + "/viking_room.png", vk::Format::eR8G8B8A8Srgb,
+                             vk::ImageAspectFlagBits::eColor);
 
-        create_vertex_buffer_(_device, _device_info, _command_pool, _graphics_queue, vertices,
-                              _vertex_buffer, _vertex_memory);
-        create_index_buffer(_device, _device_info, _command_pool, _graphics_queue, indices,
-                            _index_buffer, _index_memory);
-
-        _uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-        _uniform_memories.resize(MAX_FRAMES_IN_FLIGHT);
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-            create_uniform_buffer(_device, _device_info, _uniform_buffers[i], _uniform_memories[i]);
-
-        _tex = Texture::load(_env, std::string(tex_dir) + "/viking_room.png",
-                             vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
-
-        _descriptor_pool = create_descriptor_pool(_device, MAX_FRAMES_IN_FLIGHT);
-        _descriptor_sets = create_descriptor_set(_device, _descriptor_set_layout, _descriptor_pool,
-                                                 MAX_FRAMES_IN_FLIGHT, _uniform_buffers,
+        _descriptor_pool = create_descriptor_pool(MAX_FRAMES_INFLIGHT);
+        _descriptor_sets = create_descriptor_set(_descriptor_set_layout, _descriptor_pool,
+                                                 MAX_FRAMES_INFLIGHT, _inflight->uniform_buffers(),
                                                  _tex.img_view(), _tex.sampler());
 
-        model.model_load(_env);
+        model.model_load();
     }
 
 
     void cleanup()
     {
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        {
-            _device.destroySemaphore(_image_available_semaphores[i]);
-            _device.destroySemaphore(_render_finish_semaphores[i]);
-            _device.destroyFence(_in_flight_fences[i]);
-        }
+        vk::Device temp_device = EnvSingleton::env()->device;
+
+
+        _inflight = nullptr;
 
 
         // 各种 buffer
-        _device.destroyBuffer(_vertex_buffer);
-        _device.free(_vertex_memory);
-        _device.destroyBuffer(_index_buffer);
-        _device.free(_index_memory);
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        {
-            _device.destroyBuffer(_uniform_buffers[i]);
-            _device.free(_uniform_memories[i]);
-        }
-        _tex.free(_env);
-        _device.destroyDescriptorPool(_descriptor_pool);
-        _device.destroyCommandPool(_command_pool);
-        depth_resource_destroy();
+        temp_device.destroyBuffer(_vertex_buffer);
+        temp_device.free(_vertex_memory);
+        temp_device.destroyBuffer(_index_buffer);
+        temp_device.free(_index_memory);
+        _tex.free();
+        temp_device.destroyDescriptorPool(_descriptor_pool);
 
-        model.resource_free(_env);
+        model.resource_free();
 
 
         // render pass
-        _device.destroyRenderPass(_render_pass);
-        _device.destroyPipeline(_graphics_pipeline);
-        _device.destroyPipelineLayout(_pipeline_layout);
-        _device.destroyDescriptorSetLayout(_descriptor_set_layout);
+        temp_device.destroyRenderPass(_render_pass);
+        temp_device.destroyPipeline(_graphics_pipeline);
+        temp_device.destroyPipelineLayout(_pipeline_layout);
+        temp_device.destroyDescriptorSetLayout(_descriptor_set_layout);
 
 
         // swapchain
-        _device.destroySwapchainKHR(_swapchain);
-        for (auto &framebuffer: _swapchain_framebuffer_list)
-            _device.destroyFramebuffer(framebuffer);
-        for (auto &image_view: _swapchain_img_view_list)
-            _device.destroyImageView(image_view);
+        _framebuffer = nullptr;
+        _swapchain   = nullptr;
 
 
         // device
-        _device.destroy();
-        _instance.destroySurfaceKHR(_surface);
-        _instance.destroyDebugUtilsMessengerEXT(_dbg_msg);
+        EnvSingleton::free(_instance);
+        DebugUtils::msger_free(_instance);
         _instance.destroy();
     }
 
 
     void draw()
     {
-        (void) _device.waitForFences({_in_flight_fences[_current_frame_idx]}, VK_TRUE, UINT64_MAX);
+        auto env = EnvSingleton::env();
+
+
+        /* 等待 fence 进入 signal 状态 */
+        (void) env->device.waitForFences({_inflight->current_inflight_fence()}, VK_TRUE,
+                                         UINT64_MAX);
 
 
         /**
@@ -333,64 +226,74 @@ private:
          * 在 presentation engine 读完 image 后，它会把 semaphore 设为 signaled
          * 如果 swapchain 已经不适合 surface 了，就重新创建一个 swapchain
          */
-        const auto &[acquire_result, image_idx] =
-                acquireNextImageKHR(_device, _swapchain, UINT64_MAX,
-                                    _image_available_semaphores[_current_frame_idx], {});
-        if (acquire_result == vk::Result::eErrorOutOfDateKHR)
+        Recreate need_recreate;
+        uint32_t image_idx;
+        std::tie(need_recreate, image_idx) =
+                _swapchain->next_img_acquire(_inflight->current_img_available_semaphore());
+        if (need_recreate == Recreate::NEED)
         {
             recreate_swapchain();
             return;
-        } else if (acquire_result != vk::Result::eSuccess &&
-                   acquire_result != vk::Result::eSuboptimalKHR)
-            throw std::runtime_error("failed to acquire swapchain image.");
+        }
 
 
-        // 确保 swapchain 和 surface 匹配后再 reset fence
-        _device.resetFences({_in_flight_fences[_current_frame_idx]});
+        /* 将 fence 设为 unsignal state */
+        env->device.resetFences({_inflight->current_inflight_fence()});
 
 
         // 更新 MVP 矩阵
-        update_uniform_memory(_device, _surface_info, _uniform_memories[_current_frame_idx]);
+        update_uniform_memory(_inflight->current_uniform_mem());
 
 
-        /* clear value 的顺序应该和 framebuffer 中 attachment 的顺序一致 */
+        /* 设置 clear value，顺序应该和 framebuffer 中 attachment 的顺序一致 */
         std::array<vk::ClearValue, 2> clear_values = {
                 vk::ClearValue{.color = {.float32 = std::array<float, 4>{0.f, 0.f, 0.f, 1.f}}},
                 vk::ClearValue{.depthStencil = {1.f, 0}},
         };
+
+
         vk::RenderPassBeginInfo render_pass_info = {
                 .renderPass      = _render_pass,
-                .framebuffer     = _swapchain_framebuffer_list[image_idx],
-                .renderArea      = {.offset = {0, 0}, .extent = _surface_info.extent},
+                .framebuffer     = _framebuffer->framebuffer_get(image_idx),
+                .renderArea      = {.offset = {0, 0}, .extent = env->present_extent},
                 .clearValueCount = static_cast<uint32_t>(clear_values.size()),
                 .pClearValues    = clear_values.data(),
         };
 
 
-        // 记录绘制的命令
-        vk::CommandBuffer cur_cmd_buffer = _cmd_buffers[_current_frame_idx];
-        cur_cmd_buffer.reset();
-        cur_cmd_buffer.begin(vk::CommandBufferBeginInfo{});
-        cur_cmd_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
-        cur_cmd_buffer.bindVertexBuffers(0, {model.vertex_buffer()}, {0});
-        cur_cmd_buffer.bindIndexBuffer(model.index_buffer(), 0, vk::IndexType::eUint32);
-        cur_cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _graphics_pipeline);
-        cur_cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _pipeline_layout, 0,
-                                          {_descriptor_sets[_current_frame_idx]}, {});
-        cur_cmd_buffer.drawIndexed(static_cast<uint32_t>(model.index_cnt()), 1, 0, 0, 0);
-        cur_cmd_buffer.endRenderPass();
-        cur_cmd_buffer.end();
+        /* record command */
+        vk::CommandBuffer cur_cmd_buffer = _inflight->current_cmd_buffer();
+        {
+            cur_cmd_buffer.reset();
+            cur_cmd_buffer.begin(vk::CommandBufferBeginInfo{});
+
+            /* render pass */
+            {
+                cur_cmd_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+                cur_cmd_buffer.bindVertexBuffers(0, {model.vertex_buffer()}, {0});
+                cur_cmd_buffer.bindIndexBuffer(model.index_buffer(), 0, vk::IndexType::eUint32);
+                cur_cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _graphics_pipeline);
+                cur_cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                                  _pipeline_layout, 0,
+                                                  {_descriptor_sets[_inflight->current_idx()]}, {});
+
+                /* draw 需要在 bind 之后执行 */
+                cur_cmd_buffer.drawIndexed(static_cast<uint32_t>(model.index_cnt()), 1, 0, 0, 0);
+                cur_cmd_buffer.endRenderPass();
+            }
+
+            cur_cmd_buffer.end();
+        }
 
 
         // 提交绘制命令
         std::vector<vk::CommandBuffer> commit_cmd_buffers = {cur_cmd_buffer};
-        std::vector<vk::Semaphore> wait_semaphores        = {
-                       _image_available_semaphores[_current_frame_idx]};
+        std::vector<vk::Semaphore> wait_semaphores = {_inflight->current_img_available_semaphore()};
         std::vector<vk::PipelineStageFlags> wait_stages = {
                 vk::PipelineStageFlagBits::eColorAttachmentOutput};
         std::vector<vk::Semaphore> signal_semaphores = {
-                _render_finish_semaphores[_current_frame_idx]};
-        _graphics_queue.submit(
+                _inflight->current_render_finish_semaphore()};
+        env->graphics_cmd_pool.commit_queue().submit(
                 {vk::SubmitInfo{
                         .waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size()),
                         .pWaitSemaphores    = wait_semaphores.data(),
@@ -402,100 +305,85 @@ private:
                         .signalSemaphoreCount = static_cast<uint32_t>(signal_semaphores.size()),
                         .pSignalSemaphores    = signal_semaphores.data(),
                 }},
-                _in_flight_fences[_current_frame_idx]);
+                _inflight->current_inflight_fence());
 
 
         // 将结果送到 surface 显示
-        std::vector<vk::SwapchainKHR> swapchains = {_swapchain};
-        std::vector<uint32_t> image_indices      = {image_idx};
-        vk::PresentInfoKHR present_info          = {
-                         .waitSemaphoreCount = 1,
-                         .pWaitSemaphores    = &_render_finish_semaphores[_current_frame_idx],
-
-                         .swapchainCount = static_cast<uint32_t>(swapchains.size()),
-                         .pSwapchains    = swapchains.data(),
-                         .pImageIndices  = image_indices.data(),
-        };
-        vk::Result present_result = _present_queue.presentKHR(present_info);
-        if (present_result == vk::Result::eErrorOutOfDateKHR ||
-            present_result == vk::Result::eSuboptimalKHR || glfw_user_data.framebuffer_resized)
-        {
-            glfw_user_data.framebuffer_resized = false;
+        need_recreate =
+                _swapchain->present(image_idx, {_inflight->current_render_finish_semaphore()});
+        if (need_recreate == Recreate::NEED)
             recreate_swapchain();
-        } else if (present_result != vk::Result::eSuccess)
-            throw std::runtime_error("failed to present swapchain image.");
 
 
         // 最后交换 in flight frame index
-        _current_frame_idx = (_current_frame_idx + 1) % MAX_FRAMES_IN_FLIGHT;
+        _inflight->next_frame();
     }
 
 
+    /**
+     * window 大小改变，重新创建一系列资源
+     */
     void recreate_swapchain()
     {
-        /// 如果是窗口最小化操作，就暂停程序
-        int width = 0, height = 0;
-        glfwGetFramebufferSize(_window, &width, &height);
-        while (width == 0 || height == 0)
-        {
-            glfwWaitEvents();
-            glfwGetFramebufferSize(_window, &width, &height);
-        }
+        LogStatic::logger()->info("[window] window resized, recreate resource.");
+        auto env = EnvSingleton::env();
 
 
-        /// 等待 device 上的所有任务都执行完毕
-        _device.waitIdle();
+        /* 如果窗口最小化，先暂停程序 */
+        WindowStatic::wait_exit_minimize();
 
 
-        /// 回收和 surface 相关的资源
-        for (auto framebuffer: _swapchain_framebuffer_list)
-            _device.destroyFramebuffer(framebuffer);
-        _device.destroyPipeline(_graphics_pipeline);
-        _device.destroyRenderPass(_render_pass);
-        for (auto image_view: _swapchain_img_view_list)
-            _device.destroyImageView(image_view);
-        _device.destroySwapchainKHR(_swapchain);
-        depth_resource_destroy();
+        /* 等待 device 上的任务执行完毕 */
+        env->device.waitIdle();
 
 
-        /// 重新创建 swapchain
-        _surface_info            = SurfaceInfo::get_info(_physical_device, _surface, _window);
-        _env.surface_info        = _surface_info;
-        _swapchain               = create_swapchain(_device, _surface, _device_info, _surface_info);
-        _swapchain_img_list      = _device.getSwapchainImagesKHR(_swapchain);
-        _swapchain_img_view_list = create_swapchain_view(_env, _swapchain_img_list);
-        _render_pass             = create_render_pass(_env);
-        _graphics_pipeline =
-                create_pipeline(_device, _surface_info, _pipeline_layout, _render_pass);
-        depth_resource_create(_env, _depth_img, _depth_mem, _depth_img_view);
-        _swapchain_framebuffer_list =
-                create_framebuffers(_env, _render_pass, _swapchain_img_view_list, _depth_img_view);
+        /* 回收旧的资源 */
+        _framebuffer = nullptr;
+        env->device.destroyPipeline(_graphics_pipeline);
+        _swapchain = nullptr;
+
+
+        /* 创建新的资源 */
+        EnvSingleton::surface_recreate(_instance);
+        _swapchain         = Swapchain::create();
+        _graphics_pipeline = pipeline_create(_pipeline_layout, _render_pass);
+        _framebuffer =
+                MSAAFramebuffer::create(_render_pass, _framebuffer_layout, _swapchain->img_views(),
+                                        EnvSingleton::env()->present_extent);
     }
 
 
-    void create_sychronization()
+    /**
+     * 更新 uniform buffer 的内容，更新 model 矩阵，让物体旋转起来
+     */
+    static void update_uniform_memory(const vk::DeviceMemory &uniform_memory)
     {
-        spdlog::get("logger")->info("create synchronization.");
-        _image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        _render_finish_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        _in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
+        auto env = *EnvSingleton::env();
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        {
-            _image_available_semaphores[i] = _device.createSemaphore({});
-            _render_finish_semaphores[i]   = _device.createSemaphore({});
-            _in_flight_fences[i]           = _device.createFence({
-                              // 让 fence 初始状态是 signal 的
-                              .flags = vk::FenceCreateFlagBits::eSignaled,
-            });
-        }
-    }
+        static auto start_time = std::chrono::high_resolution_clock::now();
 
+        auto cur_time = std::chrono::high_resolution_clock::now();
+        float time =
+                std::chrono::duration<float, std::chrono::seconds::period>(cur_time - start_time)
+                        .count();
 
-    void depth_resource_destroy()
-    {
-        _device.destroyImageView(_depth_img_view);
-        _device.freeMemory(_depth_mem);
-        _device.destroyImage(_depth_img);
+        UniformBufferObject ubo = {
+                .model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f),
+                                     glm::vec3(0.f, 1.f, 0.f)),
+
+                .view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f),
+                                    glm::vec3(0.f, 1.f, 0.f)),
+
+                /* 可以确保 surface extent 是最新的值，因此拉伸窗口物体不会变形 */
+                .proj = glm::perspective(glm::radians(45.f),
+                                         (float) env.present_extent.width /
+                                                 (float) env.present_extent.height,
+                                         0.1f, 10.f),
+        };
+        ubo.proj[1][1] *= -1.f;    // OpenGL 和 vulkan 的坐标系差异
+
+        void *data = env.device.mapMemory(uniform_memory, 0, sizeof(ubo), {});
+        std::memcpy(data, &ubo, sizeof(ubo));
+        env.device.unmapMemory(uniform_memory);
     }
 };

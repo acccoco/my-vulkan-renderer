@@ -53,7 +53,7 @@ compile_shader(${shader_dir}/triangle.frag ${shader_dir}/triangle.frag.spv)
 
 
 # 注入环境的头文件
-configure_file(${CMAKE_SOURCE_DIR}/env.inl ${CMAKE_BINARY_DIR}/env.hpp)
+configure_file(${CMAKE_SOURCE_DIR}/profile.inl ${CMAKE_BINARY_DIR}/profile.hpp)
 include_directories(${CMAKE_BINARY_DIR})
 
 
@@ -68,10 +68,11 @@ set(source
         ${shader_dir}/triangle.frag.spv
         main.cpp
         core/src/buffer.cpp
-        core/src/device.cpp
+        core/src/env.cpp
         core/src/render_pass.cpp
         core/src/image.cpp
         core/src/framebuffer.cpp
+        core/src/global.cpp
         core/src/vertex.cpp
         core/src/texture.cpp
         )

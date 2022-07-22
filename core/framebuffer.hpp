@@ -1,16 +1,92 @@
 #pragma once
-#include "buffer.hpp"
+#include "attachment.hpp"
 
 
-std::vector<vk::Framebuffer>
-create_framebuffers(const Env &env, const vk::RenderPass &render_pass,
-                    const std::vector<vk::ImageView> &swapchain_image_view_list,
-                    const vk::ImageView &depth_img_view);
+struct FramebufferLayout_temp {
+    vk::Format color_format;
+    vk::SampleCountFlagBits color_sample;
+
+    vk::Format depth_format;
+    vk::SampleCountFlagBits depth_sample;
+
+    vk::Format resolve_format;
+    vk::SampleCountFlagBits resolve_sample;
+};
 
 
-vk::Format depth_format(const Env &env);
+/**
+ * 共 3 个 attachment：color，depth，resolve
+ * MSAA 使用最大值
+ */
+class MSAAFramebuffer
+{
+private:
+    std::vector<vk::Framebuffer> _framebuffers;
+    std::shared_ptr<DepthAttachment> _depth_attach;
+    std::shared_ptr<ColorAttachment> _color_attach;
 
-bool stencil_component_has(const vk::Format &format);
+    MSAAFramebuffer(const vk::RenderPass &render_pass,
+                    const FramebufferLayout_temp &framebuffer_layout,
+                    const std::vector<vk::ImageView> &resolve_views, const vk::Extent2D &extent)
+    {
+        auto env = EnvSingleton::env();
 
-void depth_resource_create(const Env &env, vk::Image &img, vk::DeviceMemory &mem,
-                           vk::ImageView &img_view);
+
+        /* 创建各种 attachment */
+        _color_attach = ColorAttachment::create(framebuffer_layout.color_format, extent,
+                                                framebuffer_layout.color_sample);
+        _depth_attach = DepthAttachment::create(extent, framebuffer_layout.depth_sample,
+                                                framebuffer_layout.depth_format);
+        std::array<vk::ImageView, 3> attachments = {
+                _color_attach->image_view(), _depth_attach->image_view(),
+                /* resolve attachment 在后面动态填充 */
+        };
+
+
+        vk::FramebufferCreateInfo framebuffer_create_info = {
+                .renderPass      = render_pass,
+                .attachmentCount = static_cast<uint32_t>(attachments.size()),
+                .pAttachments    = attachments.data(),
+                .width           = extent.width,
+                .height          = extent.height,
+                .layers          = 1,
+        };
+        _framebuffers.reserve(resolve_views.size());
+        for (const auto &resolve_view: resolve_views)
+        {
+            attachments[2] = resolve_view;
+            _framebuffers.push_back(
+                    EnvSingleton::env()->device.createFramebuffer(
+                    framebuffer_create_info));
+        }
+    }
+
+public:
+    static std::shared_ptr<MSAAFramebuffer> create(const vk::RenderPass &render_pass,
+                                                   const FramebufferLayout_temp &framebuffer_layout,
+                                                   const std::vector<vk::ImageView> &resolve_views,
+                                                   const vk::Extent2D &extent)
+    {
+        return std::shared_ptr<MSAAFramebuffer>(
+                new MSAAFramebuffer(render_pass, framebuffer_layout, resolve_views, extent));
+    }
+
+
+    vk::Framebuffer &framebuffer_get(uint32_t swapchain_img_idx)
+    {
+        return _framebuffers[swapchain_img_idx];
+    }
+
+
+    void free()
+    {
+        auto env = EnvSingleton::env();
+
+        for (auto &framebuffer: _framebuffers)
+            env->device.destroy(framebuffer);
+        _depth_attach->free();
+        _color_attach->free();
+    }
+
+    ~MSAAFramebuffer() { this->free(); }
+};

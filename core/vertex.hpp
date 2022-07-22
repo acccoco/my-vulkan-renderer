@@ -1,7 +1,7 @@
 #pragma once
 
 #include "include_vk.hpp"
-#include "device.hpp"
+#include "env.hpp"
 
 
 struct Vertex {
@@ -76,16 +76,12 @@ namespace std
 /**
  * 创建 index buffer，并且把 indices 数据填入其中
  */
-void create_index_buffer(const vk::Device &device, const DeviceInfo &device_info,
-                         const vk::CommandPool &cmd_pool, const vk::Queue &transfer_queue,
-                         const std::vector<uint32_t> &indices, vk::Buffer &index_buffer,
+void index_buffer_create(const std::vector<uint32_t> &indices, vk::Buffer &index_buffer,
                          vk::DeviceMemory &index_memory);
 
 
 /**
  * 创建 vertex buffer，将 vertex 数据填入其中
  */
-void create_vertex_buffer_(const vk::Device &device, const DeviceInfo &device_info,
-                           const vk::CommandPool &cmd_pool, const vk::Queue &transfer_queue,
-                           const std::vector<Vertex> &vertices, vk::Buffer &vertex_buffer,
+void vertex_buffer_create(const std::vector<Vertex> &vertices, vk::Buffer &vertex_buffer,
                            vk::DeviceMemory &vertex_memory);

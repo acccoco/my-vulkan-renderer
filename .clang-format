@@ -9,7 +9,7 @@ AlignAfterOpenBracket: Align
 AlignConsecutiveAssignments: Consecutive
 AlignConsecutiveDeclarations: None
 
-AlignOperands: Align
+AlignOperands: AlignAfterOperator
 AllowAllArgumentsOnNextLine: false
 PackConstructorInitializers: Never
 AllowAllParametersOfDeclarationOnNextLine: false
@@ -39,7 +39,7 @@ BraceWrapping:
   SplitEmptyFunction: false
   SplitEmptyRecord: true
 
-BreakBeforeBinaryOperators: None
+BreakBeforeBinaryOperators: NonAssignment
 BreakBeforeTernaryOperators: true
 BreakConstructorInitializers: BeforeColon
 BreakInheritanceList: BeforeColon

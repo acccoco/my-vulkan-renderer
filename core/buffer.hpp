@@ -3,10 +3,11 @@
 #include <filesystem>
 
 #include "./include_vk.hpp"
-#include "./device.hpp"
-#include "./render_pass.hpp"
+#include "./env.hpp"
 
 
+
+// TODO 将多个临时 command buffer 合起来，使用 setup() 和 flush() 来控制
 /**
  * 只用一次的 command buffer 用完以后就销毁
  * 使用实例：
@@ -17,16 +18,16 @@
 class OneTimeCmdBuffer
 {
 public:
-    OneTimeCmdBuffer(const vk::Device &device, const vk::Queue &queue,
-                     const vk::CommandPool &cmd_pool)
-        : _device(device),
-          _cmd_pool(cmd_pool),
-          _queue(queue)
+    OneTimeCmdBuffer()
     {
-        _cmd_buffer = _device.allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-                .commandPool        = _cmd_pool,
-                .level              = vk::CommandBufferLevel::ePrimary,
-                .commandBufferCount = 1,
+        auto env = EnvSingleton::env();
+
+        _commit_queue = env->graphics_cmd_pool.commit_queue.queue;
+        _pool         = env->graphics_cmd_pool.pool;
+        _cmd_buffer   = env->device.allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+                  .commandPool        = _pool,
+                  .level              = vk::CommandBufferLevel::ePrimary,
+                  .commandBufferCount = 1,
         })[0];
 
         _cmd_buffer.begin(vk::CommandBufferBeginInfo{
@@ -37,16 +38,18 @@ public:
 
     void end()
     {
+        auto env = EnvSingleton::env();
+
         _cmd_buffer.end();
 
-        _queue.submit({vk::SubmitInfo{
-                              .commandBufferCount = 1,
-                              .pCommandBuffers    = &_cmd_buffer,
-                      }},
-                      nullptr);
-        _queue.waitIdle();
+        _commit_queue.submit({vk::SubmitInfo{
+                                     .commandBufferCount = 1,
+                                     .pCommandBuffers    = &_cmd_buffer,
+                             }},
+                             nullptr);
+        _commit_queue.waitIdle();
 
-        _device.freeCommandBuffers(_cmd_pool, {_cmd_buffer});
+        env->device.free(_pool, {_cmd_buffer});
     }
 
 
@@ -55,39 +58,27 @@ public:
 
 private:
     vk::CommandBuffer _cmd_buffer;
-    const vk::Device _device;
-    const vk::CommandPool _cmd_pool;
-    const vk::Queue _queue;
+    vk::Queue _commit_queue;
+    vk::CommandPool _pool;
 };
 
 
 /**
  * 创建一个空的 buffer
  */
-void create_buffer(const vk::Device &device, const DeviceInfo &device_info, vk::DeviceSize size,
-                   vk::BufferUsageFlags buffer_usage, vk::MemoryPropertyFlags memory_properties,
-                   vk::Buffer &buffer, vk::DeviceMemory &buffer_memory);
+void buffer_create(vk::DeviceSize size, vk::BufferUsageFlags buffer_usage,
+                   vk::MemoryPropertyFlags memory_properties, vk::Buffer &buffer,
+                   vk::DeviceMemory &buffer_memory);
 
 
-void create_uniform_buffer(const vk::Device &device, const DeviceInfo &device_info,
-                           vk::Buffer &uniform_buffer, vk::DeviceMemory &uniform_memory);
+template<typename U>
+void uniform_buffer_create(vk::Buffer &uniform_buffer, vk::DeviceMemory &uniform_mem)
+{
+    buffer_create(sizeof(U), vk::BufferUsageFlagBits::eUniformBuffer,
+                  vk::MemoryPropertyFlagBits::eHostVisible |
+                          vk::MemoryPropertyFlagBits::eHostCoherent,
+                  uniform_buffer, uniform_mem);
+}
 
 
-vk::DescriptorPool create_descriptor_pool(const vk::Device &device, uint32_t frames_in_flight);
-
-vk::CommandPool create_command_pool(const vk::Device &device, const DeviceInfo &device_info);
-
-
-/**
- * 更新 uniform buffer 的内容，更新 model 矩阵，让物体旋转起来
- */
-void update_uniform_memory(const vk::Device &device, const SurfaceInfo &surface_info,
-                           const vk::DeviceMemory &uniform_memory);
-
-
-std::vector<vk::CommandBuffer> create_command_buffer(const vk::Device &device,
-                                                     const vk::CommandPool &command_pool,
-                                                     uint32_t frames_in_flight);
-
-
-// TODO 将多个临时 command buffer 合起来，使用 setup() 和 flush() 来控制
+vk::DescriptorPool create_descriptor_pool(uint32_t frames_in_flight);

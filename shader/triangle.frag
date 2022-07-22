@@ -9,7 +9,5 @@ layout(binding = 1) uniform sampler2D texSampler;
 
 
 void main() {
-    // outColor = vec4(fragColor , 1.0);
-    // outColor = vec4(fragTexCoord, 0.0, 1.0);
     outColor = vec4(texture(texSampler, fragTexCoord).rgb * fragColor, 1.0);
 }

@@ -4,11 +4,12 @@
 
 int main()
 {
-    Application app;
-
-    try {
+    try
+    {
+        Application app;
         app.run();
-    } catch (const std::exception &e) {
+    } catch (const std::exception &e)
+    {
         std::cout << "exception: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }

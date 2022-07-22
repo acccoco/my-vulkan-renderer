@@ -2,7 +2,7 @@
 
 #include "./include_vk.hpp"
 #include "./render_pass.hpp"
-#include "env.hpp"
+#include "profile.hpp"
 #include <tiny_obj_loader.h>
 #include <unordered_map>
 
@@ -22,7 +22,7 @@ class TestModel
 
 
 public:
-    void model_load(const Env &env)
+    void model_load()
     {
         tinyobj::attrib_t attr;
         std::vector<tinyobj::shape_t> shapes;
@@ -67,10 +67,8 @@ public:
             }
         }
 
-        create_vertex_buffer_(env.device, env.device_info, env.cmd_pool, env.graphics_queue,
-                              _vertices, _vertex_buffer, _vertex_mem);
-        create_index_buffer(env.device, env.device_info, env.cmd_pool, env.graphics_queue, _indices,
-                            _index_buffer, _index_mem);
+        vertex_buffer_create(_vertices, _vertex_buffer, _vertex_mem);
+        index_buffer_create(_indices, _index_buffer, _index_mem);
     }
 
 
@@ -79,11 +77,12 @@ public:
     uint32_t index_cnt() { return _indices.size(); }
 
 
-    void resource_free(const Env &env)
+    void resource_free()
     {
-        env.device.free(_vertex_mem);
-        env.device.free(_index_mem);
-        env.device.destroy(_vertex_buffer);
-        env.device.destroy(_index_buffer);
+        auto env = EnvSingleton::env();
+        env->device.free(_index_mem);
+        env->device.free(_vertex_mem);
+        env->device.destroy(_vertex_buffer);
+        env->device.destroy(_index_buffer);
     }
 };
