@@ -44,3 +44,10 @@ mipmap 的方法：
 - [ ] pcss, pcf
 - [ ] ssao, ssdo
 - [ ] ssr
+
+
+
+
+$$
+\int_i^x x^2 = 1
+$$
