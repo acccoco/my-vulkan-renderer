@@ -10,15 +10,15 @@
 
 
 #include "profile.hpp"
-#include "core/model.hpp"
-#include "core/frames.hpp"
-#include "core/global.hpp"
-#include "core/buffer.hpp"
-#include "core/vertex.hpp"
-#include "core/texture.hpp"
-#include "core/swapchain.hpp"
-#include "core/render_pass.hpp"
-#include "core/framebuffer.hpp"
+#include <model.hpp>
+#include <frames.hpp>
+#include <global.hpp>
+#include <buffer.hpp>
+#include <vertex.hpp>
+#include <texture.hpp>
+#include <swapchain.hpp>
+#include <render_pass.hpp>
+#include <framebuffer.hpp>
 
 
 // 窗口的尺寸，单位不是 pixel
@@ -161,7 +161,7 @@ private:
         /* 绘制的对象相关 */
         vertex_buffer_create(vertices, _vertex_buffer, _vertex_memory);
         index_buffer_create(indices, _index_buffer, _index_memory);
-        _tex = Texture::load(std::string(tex_dir) + "/viking_room.png", vk::Format::eR8G8B8A8Srgb,
+        _tex = Texture::load(TEXTURE("viking_room.png"), vk::Format::eR8G8B8A8Srgb,
                              vk::ImageAspectFlagBits::eColor);
 
         _descriptor_pool = create_descriptor_pool(MAX_FRAMES_INFLIGHT);
@@ -376,8 +376,8 @@ private:
 
                 /* 可以确保 surface extent 是最新的值，因此拉伸窗口物体不会变形 */
                 .proj = glm::perspective(glm::radians(45.f),
-                                         (float) env.present_extent.width /
-                                                 (float) env.present_extent.height,
+                                         (float) env.present_extent.width
+                                                 / (float) env.present_extent.height,
                                          0.1f, 10.f),
         };
         ubo.proj[1][1] *= -1.f;    // OpenGL 和 vulkan 的坐标系差异

@@ -17,8 +17,8 @@ class TestModel
     vk::Buffer _index_buffer;
     vk::DeviceMemory _index_mem;
 
-    std::string MODEL_PATH   = std::string(model_dir) + "/viking_room.obj";
-    std::string TEXTURE_PATH = std::string(tex_dir) + "/viking_room.png";
+    std::string MODEL_PATH   = MODEL("viking_room.obj");
+    std::string TEXTURE_PATH = TEXTURE("viking_room.png");
 
 
 public:

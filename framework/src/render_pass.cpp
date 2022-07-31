@@ -1,4 +1,5 @@
 #include "../render_pass.hpp"
+#include "profile.hpp"
 
 
 /**
@@ -169,8 +170,8 @@ vk::Pipeline pipeline_create(const vk::PipelineLayout &pipeline_layout,
         };
         return EnvSingleton::env()->device.createShaderModule(info);
     };
-    vk::ShaderModule vert_shader_module = shader_module_create("../shader/triangle.vert.spv");
-    vk::ShaderModule frag_shader_module = shader_module_create("../shader/triangle.frag.spv");
+    vk::ShaderModule vert_shader_module = shader_module_create(SHADER("triangle.vert.spv"));
+    vk::ShaderModule frag_shader_module = shader_module_create(SHADER( "/triangle.frag.spv"));
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stage_create_info = {
             vk::PipelineShaderStageCreateInfo{
                     .stage  = vk::ShaderStageFlagBits::eVertex,

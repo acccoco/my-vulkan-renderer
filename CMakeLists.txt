@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(VK)
-
-
-set(shader_dir ${CMAKE_SOURCE_DIR}/shader)
+project(learn-VK)
 
 
 # compile options
@@ -10,71 +7,17 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 
 
-# system header and lib
-if (APPLE)
-    include_directories(/opt/homebrew/include)
-    link_directories(/opt/homebrew/lib)
 
-    add_compile_definitions(VK_ICD_FILENAMES=/usr/local/share/vulkan/icd.d/MoltenVK_icd.json)
-    add_compile_definitions(VK_LAYER_PATH=/usr/local/share/vulkan/explicit_layer.d)
-    # enable best practice validation layer
-    add_compile_definitions(VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT;VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ARM)
-endif ()
+# folder and profiles
+set(PROJ_SHADER_DIR ${CMAKE_SOURCE_DIR}/shader)
+set(PROJ_ASSETS_DIR ${CMAKE_SOURCE_DIR}/assets)
+configure_file(${CMAKE_SOURCE_DIR}/profile.inl ${CMAKE_BINARY_DIR}/in/profile.hpp)
+include_directories(${CMAKE_BINARY_DIR}/in)
+set(PROJ_FRAMEWORK framework)
 
 
-# lib
-find_package(glm REQUIRED)
-find_package(glfw3 REQUIRED)
-find_package(Vulkan REQUIRED)
-find_package(spdlog REQUIRED)
-find_package(TinyGLTF REQUIRED HINTS ./ext/tinyGLTF)
-find_package(TinyObjLoader REQUIRED HINTS ./ext/tinyobj)
-set(libs
-        glm::glm
-        glfw
-        Vulkan::Vulkan
-        spdlog::spdlog
-        TinyGLTF
-        TinyObjLoader
-        )
 
+include(cmake/sampler_helper.cmake)
+add_subdirectory(framework)
+add_subdirectory(examples)
 
-# compile shader
-function(compile_shader src dst)
-    add_custom_command(
-            OUTPUT ${dst}
-            COMMAND glslc ${src} -o ${dst}
-            DEPENDS ${src}
-            VERBATIM
-    )
-endfunction()
-compile_shader(${shader_dir}/triangle.vert ${shader_dir}/triangle.vert.spv)
-compile_shader(${shader_dir}/triangle.frag ${shader_dir}/triangle.frag.spv)
-
-
-# 注入环境的头文件
-configure_file(${CMAKE_SOURCE_DIR}/profile.inl ${CMAKE_BINARY_DIR}/profile.hpp)
-include_directories(${CMAKE_BINARY_DIR})
-
-
-# test
-add_executable(test test.cpp)
-target_link_libraries(test ${libs})
-
-
-# main target
-set(source
-        ${shader_dir}/triangle.vert.spv
-        ${shader_dir}/triangle.frag.spv
-        main.cpp
-        core/src/buffer.cpp
-        core/src/env.cpp
-        core/src/render_pass.cpp
-        core/src/image.cpp
-        core/src/framebuffer.cpp
-        core/src/global.cpp
-        core/src/vertex.cpp
-        core/src/texture.cpp
-        )
-add_executable(VK ${source})
-target_link_libraries(VK ${libs})
