@@ -5,10 +5,10 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 
-/* vulkan_beta.h，在 metal 上运行 vulkan，需要这个 */
-#define VK_ENABLE_BETA_EXTENSIONS
+#define VK_ENABLE_BETA_EXTENSIONS    // vulkan_beta.h，在 metal 上运行 vulkan，需要这个
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #define VULKAN_HPP_NO_UNION_CONSTRUCTORS
+#define VULKAN_HPP_NO_STRUCT_SETTERS
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 

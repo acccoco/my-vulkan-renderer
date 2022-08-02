@@ -1,9 +1,10 @@
 #include "../texture.hpp"
+#include "env.hpp"
 
 
 void Texture::img_init(const std::string &file_path)
 {
-    auto env = EnvSingleton::env();
+    auto env = Hiss::Env::env();
 
     /* read data from texture file */
     stbi_uc *data = nullptr;

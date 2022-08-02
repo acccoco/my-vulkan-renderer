@@ -1,6 +1,7 @@
 #pragma once
 
 #include "image.hpp"
+#include "env.hpp"
 
 
 class Texture
@@ -36,7 +37,7 @@ public:
 
     void free()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
         env->device.destroy(_img_view);
         env->device.destroy(_img);
         env->device.destroy(_sampler);

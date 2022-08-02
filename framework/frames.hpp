@@ -30,7 +30,7 @@ private:
 
     FramesInflight()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
         for (size_t i = 0; i < N; ++i)
         {
@@ -76,7 +76,7 @@ public:
 
     ~FramesInflight()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
         for (size_t i = 0; i < N; ++i)
         {

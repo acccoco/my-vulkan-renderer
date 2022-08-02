@@ -1,5 +1,5 @@
 #include <iostream>
-#include "application.hpp"
+#include "hello_triangle.hpp"
 
 
 int main()

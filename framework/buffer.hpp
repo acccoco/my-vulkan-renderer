@@ -4,7 +4,7 @@
 
 #include "./include_vk.hpp"
 #include "./env.hpp"
-
+#include "env.hpp"
 
 
 // TODO 将多个临时 command buffer 合起来，使用 setup() 和 flush() 来控制
@@ -20,7 +20,7 @@ class OneTimeCmdBuffer
 public:
     OneTimeCmdBuffer()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
         _commit_queue = env->graphics_cmd_pool.commit_queue.queue;
         _pool         = env->graphics_cmd_pool.pool;
@@ -38,7 +38,7 @@ public:
 
     void end()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
         _cmd_buffer.end();
 

@@ -2,7 +2,7 @@
 #include "../buffer.hpp"
 #include "../image.hpp"
 
-PhysicalInfo::PhysicalInfo(const vk::PhysicalDevice &physical_device, const vk::SurfaceKHR &surface)
+Hiss::DeviceInfo::DeviceInfo(const vk::PhysicalDevice &physical_device, const vk::SurfaceKHR &surface)
 {
     physical_device_properties = physical_device.getProperties();
     physical_device_features   = physical_device.getFeatures();
@@ -27,7 +27,7 @@ PhysicalInfo::PhysicalInfo(const vk::PhysicalDevice &physical_device, const vk::
 }
 
 
-vk::SurfaceKHR EnvSingleton::surface_create(const vk::Instance &instance, GLFWwindow *window)
+vk::SurfaceKHR Hiss::Env::surface_create(const vk::Instance &instance, GLFWwindow *window)
 {
     /* 调用 glfw 来创建 window surface，这样可以避免平台相关的细节 */
     VkSurfaceKHR surface_;
@@ -37,7 +37,7 @@ vk::SurfaceKHR EnvSingleton::surface_create(const vk::Instance &instance, GLFWwi
 }
 
 
-bool EnvSingleton::physical_device_pick(const PhysicalInfo &info)
+bool Hiss::Env::physical_device_pick(const Hiss::DeviceInfo &info)
 {
     /* device feature：需要支持 tessellation 以及 anisotropy sample */
     if (!info.physical_device_features.tessellationShader ||
@@ -60,8 +60,8 @@ bool EnvSingleton::physical_device_pick(const PhysicalInfo &info)
 /**
  * 创建 logical device，申请需要的 queue
  */
-vk::Device EnvSingleton::device_create(const vk::PhysicalDevice &physical_device,
-                                       const PhysicalInfo &physical_info,
+vk::Device Hiss::Env::device_create(const vk::PhysicalDevice &physical_device,
+                                       const Hiss::DeviceInfo &physical_info,
                                        const std::vector<vk::DeviceQueueCreateInfo> &queue_info)
 {
     /* device 需要的 extensions */
@@ -89,7 +89,7 @@ vk::Device EnvSingleton::device_create(const vk::PhysicalDevice &physical_device
     return physical_device.createDevice(device_create_info);
 }
 
-vk::CommandPool EnvSingleton::cmd_pool_create(const vk::Device &device, uint32_t queue_family_indx)
+vk::CommandPool Hiss::Env::cmd_pool_create(const vk::Device &device, uint32_t queue_family_indx)
 {
     vk::CommandPoolCreateInfo pool_create_info = {
             .flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -101,8 +101,7 @@ vk::CommandPool EnvSingleton::cmd_pool_create(const vk::Device &device, uint32_t
 /**
  * 从设备支持的 format 中选择一种，优先选择 BGRA8_srgb 的
  */
-vk::SurfaceFormatKHR
-EnvSingleton::present_format_choose(const std::vector<vk::SurfaceFormatKHR> &format_list_)
+vk::SurfaceFormatKHR Hiss::Env::present_format_choose(const std::vector<vk::SurfaceFormatKHR> &format_list_)
 {
     for (const auto &format: format_list_)
         if (format.format == vk::Format::eB8G8R8A8Srgb &&
@@ -114,8 +113,7 @@ EnvSingleton::present_format_choose(const std::vector<vk::SurfaceFormatKHR> &for
 /**
  * 从设备支持的 present mode 中选择一种，优先选择 mailbox 类型
  */
-vk::PresentModeKHR
-EnvSingleton::present_mode_choose(const std::vector<vk::PresentModeKHR> &present_mode_list_)
+vk::PresentModeKHR Hiss::Env::present_mode_choose(const std::vector<vk::PresentModeKHR> &present_mode_list_)
 {
     for (const auto &present_mode: present_mode_list_)
         if (present_mode == vk::PresentModeKHR::eMailbox)
@@ -130,7 +128,7 @@ EnvSingleton::present_mode_choose(const std::vector<vk::PresentModeKHR> &present
  * 为单位的分辨率 在 Apple Retina display 上，pixel 是 screen coordinate 的 2 倍 最好的方法就是使用
  * glfwGetFramebufferSize 去查询 window 以 pixel 为单位的大小
  */
-vk::Extent2D EnvSingleton::present_extent_choose(vk::SurfaceCapabilitiesKHR &capability_,
+vk::Extent2D Hiss::Env::present_extent_choose(vk::SurfaceCapabilitiesKHR &capability_,
                                                  GLFWwindow *window)
 {
     /* 如果是 0xFFFFFFFF，表示 extent 需要由相关的 swapchain 大小来决定，也就是手动决定 */
@@ -153,20 +151,20 @@ vk::Extent2D EnvSingleton::present_extent_choose(vk::SurfaceCapabilitiesKHR &cap
 /**
  * 在 instance 以及 window 之后初始化，在 env 之前销毁
  */
-void EnvSingleton::init_once(const vk::Instance &instance)
+void Hiss::Env::init_once(const vk::Instance &instance)
 {
     assert(_env == nullptr);
 
     auto logger = LogStatic::logger();
-    EnvSingleton env;
+    Hiss::Env  env;
 
     /* 创建 surface 以及 physical device */
     logger->info("create surface and physical device.");
-    env.surface                = EnvSingleton::surface_create(instance, WindowStatic::window_get());
+    env.surface                = Env::surface_create(instance, WindowStatic::window_get());
     bool physical_device_found = false;
     for (const auto &physical_device: instance.enumeratePhysicalDevices())
     {
-        env.info = std::make_shared<PhysicalInfo>(physical_device, env.surface);
+        env.info = std::make_shared<Hiss::DeviceInfo>(physical_device, env.surface);
         if (physical_device_pick(*env.info))
         {
             env.physical_device   = physical_device;
@@ -218,11 +216,11 @@ void EnvSingleton::init_once(const vk::Instance &instance)
     env.present_extent =
             present_extent_choose(env.info->surface_capability, WindowStatic::window_get());
 
-    _env = std::make_shared<EnvSingleton>(env);
+    _env = std::make_shared<Hiss::Env>(env);
 }
 
 
-void EnvSingleton::free(const vk::Instance &instance)
+void Hiss::Env::free(const vk::Instance &instance)
 {
     assert(_env != nullptr);
 
@@ -237,13 +235,13 @@ void EnvSingleton::free(const vk::Instance &instance)
 /**
  * window 尺寸发生变换，因此重新创建 surface，physical info 也要一起更新
  */
-void EnvSingleton::surface_recreate(const vk::Instance &instance)
+void Hiss::Env::resize(const vk::Instance &instance)
 {
     assert(_env != nullptr);
 
     instance.destroy(_env->surface);
-    _env->surface = EnvSingleton::surface_create(instance, WindowStatic::window_get());
-    _env->info    = std::make_shared<PhysicalInfo>(_env->physical_device, _env->surface);
+    _env->surface = Env::surface_create(instance, WindowStatic::window_get());
+    _env->info    = std::make_shared<Hiss::DeviceInfo>(_env->physical_device, _env->surface);
     _env->present_extent =
             present_extent_choose(_env->info->surface_capability, WindowStatic::window_get());
 }
@@ -252,7 +250,7 @@ void EnvSingleton::surface_recreate(const vk::Instance &instance)
 /**
  * 根据 tiling 和 features，在 candidate 中找到合适的 format
  */
-std::optional<vk::Format> EnvSingleton::format_filter(const std::vector<vk::Format> &candidates,
+std::optional<vk::Format> Hiss::Env::format_filter(const std::vector<vk::Format> &candidates,
                                                       vk::ImageTiling tiling,
                                                       vk::FormatFeatureFlags features)
 {
@@ -276,7 +274,7 @@ std::optional<vk::Format> EnvSingleton::format_filter(const std::vector<vk::Form
 /**
  * 找到 device 允许的最大 MSAA 数
  */
-vk::SampleCountFlagBits EnvSingleton::max_sample_cnt()
+vk::SampleCountFlagBits Hiss::Env::max_sample_cnt()
 {
     assert(_env != nullptr);
 
@@ -298,7 +296,7 @@ vk::SampleCountFlagBits EnvSingleton::max_sample_cnt()
 }
 
 
-vk::DeviceMemory EnvSingleton::mem_allocate(const vk::MemoryRequirements &mem_require,
+vk::DeviceMemory Hiss::Env::mem_allocate(const vk::MemoryRequirements &mem_require,
                                             const vk::MemoryPropertyFlags &mem_prop)
 {
     assert(_env != nullptr);

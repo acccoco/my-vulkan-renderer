@@ -1,15 +1,17 @@
+#include "../vk_common.hpp"
 #include "../image.hpp"
+#include "env.hpp"
 
 
-void img_create(const vk::ImageCreateInfo &image_info, const vk::MemoryPropertyFlags &mem_prop,
-                vk::Image &image, vk::DeviceMemory &memory)
+void img_create(const vk::ImageCreateInfo &image_info, const vk::MemoryPropertyFlags &mem_prop, vk::Image &image,
+                vk::DeviceMemory &memory)
 {
-    auto env = *EnvSingleton::env();
+    auto env = *Hiss::Env::env();
     image    = env.device.createImage(image_info);
 
     vk::MemoryRequirements mem_require = env.device.getImageMemoryRequirements(image);
 
-    memory = EnvSingleton::mem_allocate(mem_require, mem_prop);
+    memory = Hiss::Env::mem_allocate(mem_require, mem_prop);
 
     env.device.bindImageMemory(image, memory, 0);
 }
@@ -25,7 +27,7 @@ void img_layout_trans(vk::Image &image, const vk::Format &format, const vk::Imag
     if (new_layout == vk::ImageLayout::eDepthStencilAttachmentOptimal)
     {
         aspect_flags = vk::ImageAspectFlagBits::eDepth;
-        if (EnvSingleton::stencil_component_has(format))
+        if (Hiss::stencil_component_has(format))
             aspect_flags |= vk::ImageAspectFlagBits::eStencil;
     }
 
@@ -60,8 +62,7 @@ void img_layout_trans(vk::Image &image, const vk::Format &format, const vk::Imag
     vk::PipelineStageFlags src_stage;
     vk::PipelineStageFlags dst_stage;
 
-    if (old_layout == vk::ImageLayout::eUndefined
-        && new_layout == vk::ImageLayout::eTransferDstOptimal)
+    if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eTransferDstOptimal)
     {
         // 注：transfer 是一个 pseudo 的 pipeline stage，用于进行 transfer 的
         barrier.srcAccessMask = {};
@@ -81,8 +82,8 @@ void img_layout_trans(vk::Image &image, const vk::Format &format, const vk::Imag
                && new_layout == vk::ImageLayout::eDepthStencilAttachmentOptimal)
     {
         barrier.srcAccessMask = {};
-        barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead
-                              | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+        barrier.dstAccessMask =
+                vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 
         src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
 
@@ -98,7 +99,7 @@ void img_layout_trans(vk::Image &image, const vk::Format &format, const vk::Imag
         throw std::invalid_argument("unsupported layout transition!");
 
 
-    auto env = EnvSingleton::env();
+    auto             env = Hiss::Env::env();
     OneTimeCmdBuffer cmd;
     // 前三个参数：src 和 dst 的 pipeline stage；xxx
     // 后三个参数：三种 barrier 的 list
@@ -130,7 +131,7 @@ void buffer_image_copy(vk::Buffer &buffer, vk::Image &image, uint32_t width, uin
     };
 
 
-    auto env = *EnvSingleton::env();
+    auto             env = *Hiss::Env::env();
     OneTimeCmdBuffer cmd;
     // 第 3 个参数：image 当前是什么 layout，这里表示适合用于 transfer to
     cmd().copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {copy_region});
@@ -153,13 +154,13 @@ vk::ImageView img_view_create(const vk::Image &tex_img, const vk::Format &format
                                  .layerCount     = 1},
     };
 
-    return EnvSingleton::env()->device.createImageView(view_info);
+    return Hiss::Env::env()->device.createImageView(view_info);
 }
 
 
 vk::Sampler sampler_create(std::optional<uint32_t> mip_levels)
 {
-    auto env                           = EnvSingleton::env();
+    auto                  env          = Hiss::Env::env();
     vk::SamplerCreateInfo sampler_info = {
             .magFilter  = vk::Filter::eLinear,
             .minFilter  = vk::Filter::eLinear,
@@ -193,21 +194,19 @@ vk::Sampler sampler_create(std::optional<uint32_t> mip_levels)
  * 确保 image 是支持 mipmap 的（也就是有足够的空间）
  * 假定 image 原来的 layout 是 transfer dst；函数执行后会将 layout 转换为 shader read only
  */
-void mipmap_generate(vk::Image &image, const vk::Format &format, int32_t width, int32_t height,
-                     uint32_t mip_levels)
+void mipmap_generate(vk::Image &image, const vk::Format &format, int32_t width, int32_t height, uint32_t mip_levels)
 {
-    auto env = EnvSingleton::env();
+    auto env = Hiss::Env::env();
 
     /* 检查 platform 上的 format 是否支持 linear filter */
     {
         vk::FormatProperties format_prop = env->physical_device.getFormatProperties(format);
-        if (!(format_prop.optimalTilingFeatures
-              & vk::FormatFeatureFlagBits::eSampledImageFilterLinear))
+        if (!(format_prop.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear))
             throw std::runtime_error("texture image format does not support linear filtering.");
     }
 
 
-    OneTimeCmdBuffer cmd_buffer;
+    OneTimeCmdBuffer       cmd_buffer;
     vk::ImageMemoryBarrier barrier = {
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -229,8 +228,8 @@ void mipmap_generate(vk::Image &image, const vk::Format &format, int32_t width, 
         barrier.newLayout                     = vk::ImageLayout::eTransferSrcOptimal;
         barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
         barrier.dstAccessMask                 = vk::AccessFlagBits::eTransferRead;
-        cmd_buffer().pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                     vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, {barrier});
+        cmd_buffer().pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, {},
+                                     {}, {barrier});
 
 
         /* 根据 level-1 生成 level，使用 linear 的方法来生成 */
@@ -254,8 +253,8 @@ void mipmap_generate(vk::Image &image, const vk::Format &format, int32_t width, 
                                    .layerCount     = 1},
                 .dstOffsets     = dst_offset,
         };
-        cmd_buffer().blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image,
-                               vk::ImageLayout::eTransferDstOptimal, {blit}, vk::Filter::eLinear);
+        cmd_buffer().blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image, vk::ImageLayout::eTransferDstOptimal,
+                               {blit}, vk::Filter::eLinear);
 
 
         /* 将 level-1 image 变为最终的 shader read only layout */
@@ -263,9 +262,8 @@ void mipmap_generate(vk::Image &image, const vk::Format &format, int32_t width, 
         barrier.newLayout     = vk::ImageLayout::eShaderReadOnlyOptimal;
         barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        cmd_buffer().pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                     vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
-                                     {barrier});
+        cmd_buffer().pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
+                                     {}, {}, {}, {barrier});
 
 
         if (mip_width > 1)
@@ -281,8 +279,8 @@ void mipmap_generate(vk::Image &image, const vk::Format &format, int32_t width, 
     barrier.newLayout                     = vk::ImageLayout::eShaderReadOnlyOptimal;
     barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
     barrier.dstAccessMask                 = vk::AccessFlagBits::eShaderRead;
-    cmd_buffer().pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                 vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, {barrier});
+    cmd_buffer().pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {},
+                                 {}, {}, {barrier});
 
 
     cmd_buffer.end();

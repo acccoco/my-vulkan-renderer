@@ -1,11 +1,12 @@
 #include "../buffer.hpp"
+#include "env.hpp"
 
 
 void buffer_create(vk::DeviceSize size, vk::BufferUsageFlags buffer_usage,
               vk::MemoryPropertyFlags memory_properties, vk::Buffer &buffer,
               vk::DeviceMemory &buffer_memory)
 {
-    auto env = *EnvSingleton::env();
+    auto env = *Hiss::Env::env();
 
     // 创建 buffer
     buffer = env.device.createBuffer({
@@ -18,7 +19,7 @@ void buffer_create(vk::DeviceSize size, vk::BufferUsageFlags buffer_usage,
     // 分配 memory
     vk::MemoryRequirements mem_require = env.device.getBufferMemoryRequirements(buffer);
 
-    buffer_memory = EnvSingleton::mem_allocate(mem_require, memory_properties);
+    buffer_memory = Hiss::Env::mem_allocate(mem_require, memory_properties);
 
 
     // 绑定
@@ -41,7 +42,7 @@ create_descriptor_pool(uint32_t frames_in_flight)
                     .descriptorCount = frames_in_flight,
             }};
 
-    return EnvSingleton::env()->device.createDescriptorPool(vk::DescriptorPoolCreateInfo{
+    return Hiss::Env::env()->device.createDescriptorPool(vk::DescriptorPoolCreateInfo{
             .maxSets = frames_in_flight,
 
             // pool 允许每个种类的 descriptor 各有多少个

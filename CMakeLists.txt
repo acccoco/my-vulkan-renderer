@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(learn-VK)
+project(Hiss)   # Hiss for 🥵
 
 
 # compile options

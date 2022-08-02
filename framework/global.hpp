@@ -41,11 +41,12 @@ class WindowStatic
 private:
     WindowStatic() = default;
 
-    struct UserData {
+    struct UserData
+    {
         bool resized;
     };
     inline static GLFWwindow *_window = nullptr;
-    inline static UserData _user_data{false};
+    inline static UserData    _user_data{false};
 
 
 public:
@@ -104,6 +105,17 @@ public:
 
         LogStatic::logger()->info("window is not minimize.");
     }
+
+
+    static std::vector<const char *> extensions_get()
+    {
+        std::vector<const char *> extension_list;
+        uint32_t                  extension_cnt = 0;
+        const char              **extensions    = glfwGetRequiredInstanceExtensions(&extension_cnt);
+        for (int i = 0; i < extension_cnt; ++i)
+            extension_list.push_back(extensions[i]);
+        return extension_list;
+    }
 };
 
 
@@ -121,16 +133,15 @@ private:
 public:
     static void msger_init(const vk::Instance &instance)
     {
-        _dbg_msger = instance.createDebugUtilsMessengerEXT(DebugUtils::dbg_msg_info);
+        _dbg_msger = instance.createDebugUtilsMessengerEXT(DebugUtils::debug_msg_info);
     }
 
     static void msger_free(const vk::Instance &instance) { instance.destroy(_dbg_msger); }
 
 
-    static vk::Bool32 debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-                                     VkDebugUtilsMessageTypeFlagsEXT message_type,
-                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
-                                     void *)
+    static vk::Bool32 debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+                                     VkDebugUtilsMessageTypeFlagsEXT             message_type,
+                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *)
     {
         const char *type;
         switch (static_cast<vk::DebugUtilsMessageTypeFlagBitsEXT>(message_type))
@@ -157,7 +168,7 @@ public:
     }
 
 
-    inline static const vk::DebugUtilsMessengerCreateInfoEXT dbg_msg_info = {
+    inline static const vk::DebugUtilsMessengerCreateInfoEXT debug_msg_info = {
             .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose
                              | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning
                              | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,

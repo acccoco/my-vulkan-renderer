@@ -1,12 +1,13 @@
 #include "../vertex.hpp"
 #include "../buffer.hpp"
+#include "env.hpp"
 
 
 void index_buffer_create(const std::vector<uint32_t> &indices, vk::Buffer &index_buffer,
                          vk::DeviceMemory &index_memory)
 {
     LogStatic::logger()->info("create index buffer.");
-    auto env = EnvSingleton::env();
+    auto env = Hiss::Env::env();
 
     vk::DeviceSize buffer_size = sizeof(indices[0]) * indices.size();
 
@@ -44,7 +45,7 @@ void vertex_buffer_create(const std::vector<Vertex> &vertices, vk::Buffer &verte
                           vk::DeviceMemory &vertex_memory)
 {
     LogStatic::logger()->info("create vertex buffer.");
-    auto env = EnvSingleton::env();
+    auto env = Hiss::Env::env();
 
     vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
 

@@ -23,9 +23,8 @@ private:
 
     Swapchain()
     {
-        assert(EnvSingleton::debug_has_init());
         _swapchain   = Swapchain::create_swapchain();
-        _images      = EnvSingleton::env()->device.getSwapchainImagesKHR(_swapchain);
+        _images      = Hiss::Env::env()->device.getSwapchainImagesKHR(_swapchain);
         _image_views = Swapchain::create_swapchain_view(_images);
 
 
@@ -40,11 +39,11 @@ public:
 
     ~Swapchain() { this->free(); }
 
-    vk::Format format() { return EnvSingleton::env()->present_format.format; }
+    vk::Format format() { return Hiss::Env::env()->present_format.format; }
 
     void free()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
         for (auto &img_view: _image_views)
             env->device.destroy(img_view);
@@ -61,7 +60,7 @@ public:
      */
     std::pair<Recreate, uint32_t> next_img_acquire(const vk::Semaphore &signal_semaphore)
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
         /* 这里不用 vulkan-cpp，因为错误处理有些问题 */
         uint32_t image_idx;
@@ -88,7 +87,7 @@ public:
                 .pSwapchains        = &_swapchain,
                 .pImageIndices      = &img_idx,
         };
-        vk::Result result = EnvSingleton::env()->present_queue().presentKHR(info);
+        vk::Result result = Hiss::Env::env()->present_queue().presentKHR(info);
 
         if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR ||
             WindowStatic::resized())
@@ -111,7 +110,7 @@ private:
     static vk::SwapchainKHR create_swapchain()
     {
         LogStatic::logger()->info("create swapchain.");
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
 
         /**
@@ -171,7 +170,7 @@ private:
         std::vector<vk::ImageView> view_list;
 
         for (const vk::Image &image: image_list)
-            view_list.push_back(img_view_create(image, EnvSingleton::env()->present_format.format,
+            view_list.push_back(img_view_create(image, Hiss::Env::env()->present_format.format,
                                                 vk::ImageAspectFlagBits::eColor, 1));
 
         return view_list;

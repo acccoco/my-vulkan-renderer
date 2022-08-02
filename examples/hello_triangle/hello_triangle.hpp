@@ -10,6 +10,7 @@
 
 
 #include "profile.hpp"
+#include "env.hpp"
 #include <model.hpp>
 #include <frames.hpp>
 #include <global.hpp>
@@ -34,6 +35,7 @@ std::vector<uint32_t> indices = {
 };
 
 
+// TODO 这些数据处理一下
 // 三角形的顶点数据
 std::vector<Vertex> vertices = {
         {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
@@ -68,7 +70,7 @@ public:
         }
 
 
-        EnvSingleton::env()->device.waitIdle();
+        Hiss::Env::env()->device.waitIdle();
 
 
         cleanup();
@@ -115,14 +117,14 @@ private:
     void init_application()
     {
         VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
-        _instance = instance_create(DebugUtils::dbg_msg_info);
+        _instance = instance_create(DebugUtils::debug_msg_info);
         VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
         DebugUtils::msger_init(_instance);
 
 
         /* device 相关 */
-        EnvSingleton::init_once(_instance);
-        auto env   = EnvSingleton::env();
+        Hiss::Env::init_once(_instance);
+        auto env   = Hiss::Env::env();
         _inflight  = FramesInflight<MAX_FRAMES_INFLIGHT>::create();
         _swapchain = Swapchain::create();
 
@@ -175,7 +177,7 @@ private:
 
     void cleanup()
     {
-        vk::Device temp_device = EnvSingleton::env()->device;
+        vk::Device temp_device = Hiss::Env::env()->device;
 
 
         _inflight = nullptr;
@@ -205,7 +207,7 @@ private:
 
 
         // device
-        EnvSingleton::free(_instance);
+        Hiss::Env::free(_instance);
         DebugUtils::msger_free(_instance);
         _instance.destroy();
     }
@@ -213,7 +215,7 @@ private:
 
     void draw()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
 
         /* 等待 fence 进入 signal 状态 */
@@ -326,7 +328,7 @@ private:
     void recreate_swapchain()
     {
         LogStatic::logger()->info("[window] window resized, recreate resource.");
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
 
         /* 如果窗口最小化，先暂停程序 */
@@ -344,12 +346,12 @@ private:
 
 
         /* 创建新的资源 */
-        EnvSingleton::surface_recreate(_instance);
+        Hiss::Env::resize(_instance);
         _swapchain         = Swapchain::create();
         _graphics_pipeline = pipeline_create(_pipeline_layout, _render_pass);
         _framebuffer =
                 MSAAFramebuffer::create(_render_pass, _framebuffer_layout, _swapchain->img_views(),
-                                        EnvSingleton::env()->present_extent);
+                                                     Hiss::Env::env()->present_extent);
     }
 
 
@@ -358,7 +360,7 @@ private:
      */
     static void update_uniform_memory(const vk::DeviceMemory &uniform_memory)
     {
-        auto env = *EnvSingleton::env();
+        auto env = *Hiss::Env::env();
 
         static auto start_time = std::chrono::high_resolution_clock::now();
 

@@ -24,6 +24,27 @@ set(LIBS
         TinyObjLoader
         )
 
+set(HEADER_FILES
+        application.hpp
+        attachment.hpp
+        buffer.hpp
+        env.hpp
+        framebuffer.hpp
+        frames.hpp
+        global.hpp
+        image.hpp
+        include_vk.hpp
+        model.hpp
+        render_pass.hpp
+        swapchain.hpp
+        texture.hpp
+        tools.hpp
+        vertex.hpp
+        vk_common.hpp
+        instance.hpp
+        render_context.hpp
+        window.hpp
+        device.hpp)
 
 # source files
 set(SOURCE_FILES
@@ -35,10 +56,12 @@ set(SOURCE_FILES
         src/global.cpp
         src/vertex.cpp
         src/texture.cpp
-        )
+        src/application.cpp
+        src/instance.cpp
+        src/window.cpp src/device.cpp src/vk_common.cpp)
 
 
 # static library
-add_library(${PROJ_FRAMEWORK} STATIC ${SOURCE_FILES})
+add_library(${PROJ_FRAMEWORK} STATIC ${SOURCE_FILES} ${HEADER_FILES})
 target_link_libraries(${PROJ_FRAMEWORK} PUBLIC ${LIBS})
 target_include_directories(${PROJ_FRAMEWORK} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

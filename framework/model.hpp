@@ -3,6 +3,7 @@
 #include "./include_vk.hpp"
 #include "./render_pass.hpp"
 #include "profile.hpp"
+#include "env.hpp"
 #include <tiny_obj_loader.h>
 #include <unordered_map>
 
@@ -79,7 +80,7 @@ public:
 
     void resource_free()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
         env->device.free(_index_mem);
         env->device.free(_vertex_mem);
         env->device.destroy(_vertex_buffer);

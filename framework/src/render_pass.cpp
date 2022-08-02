@@ -1,5 +1,6 @@
 #include "../render_pass.hpp"
 #include "profile.hpp"
+#include "env.hpp"
 
 
 /**
@@ -8,7 +9,7 @@
 vk::RenderPass render_pass_create(const FramebufferLayout_temp &framebuffer_layout)
 {
     LogStatic::logger()->info("create render pass.");
-    auto env = *EnvSingleton::env();
+    auto env = *Hiss::Env::env();
 
 
     /**
@@ -157,7 +158,7 @@ vk::Pipeline pipeline_create(const vk::PipelineLayout &pipeline_layout,
                              const vk::RenderPass &render_pass)
 {
     LogStatic::logger()->info("create pipeline.");
-    auto env = EnvSingleton::env();
+    auto env = Hiss::Env::env();
 
 
     /* 根据字节码创建 shader module */
@@ -168,7 +169,7 @@ vk::Pipeline pipeline_create(const vk::PipelineLayout &pipeline_layout,
                 // vector 容器可以保证转换为 uint32 后仍然是对齐的
                 .pCode = reinterpret_cast<const uint32_t *>(code.data()),
         };
-        return EnvSingleton::env()->device.createShaderModule(info);
+        return Hiss::Env::env()->device.createShaderModule(info);
     };
     vk::ShaderModule vert_shader_module = shader_module_create(SHADER("triangle.vert.spv"));
     vk::ShaderModule frag_shader_module = shader_module_create(SHADER( "/triangle.frag.spv"));
@@ -261,7 +262,7 @@ vk::Pipeline pipeline_create(const vk::PipelineLayout &pipeline_layout,
     /* MSAA */
     vk::PipelineMultisampleStateCreateInfo multisample_state = {
             /* 使用最高的 MSAA */
-            .rasterizationSamples  = EnvSingleton::max_sample_cnt(),
+            .rasterizationSamples  = Hiss::Env::max_sample_cnt(),
             .sampleShadingEnable   = VK_TRUE,
             .minSampleShading      = .2f,
             .pSampleMask           = nullptr,
@@ -379,7 +380,7 @@ vk::DescriptorSetLayout descriptor_set_layout_create()
             uniform_binding,
             sampler_binding,
     };
-    return EnvSingleton::env()->device.createDescriptorSetLayout({
+    return Hiss::Env::env()->device.createDescriptorSetLayout({
             .bindingCount = static_cast<uint32_t>(bindings.size()),
             .pBindings    = bindings.data(),
     });
@@ -391,7 +392,7 @@ pipeline_layout_create(const std::vector<vk::DescriptorSetLayout> &descriptor_se
 {
     LogStatic::logger()->info("create pipeline layout.");
 
-    return EnvSingleton::env()->device.createPipelineLayout(vk::PipelineLayoutCreateInfo{
+    return Hiss::Env::env()->device.createPipelineLayout(vk::PipelineLayoutCreateInfo{
             .setLayoutCount = (uint32_t) descriptor_set_layout.size(),
             .pSetLayouts    = descriptor_set_layout.data(),
     });
@@ -408,7 +409,7 @@ create_descriptor_set(const vk::DescriptorSetLayout &descriptor_set_layout,
                       const vk::ImageView &tex_img_view, const vk::Sampler &tex_sampler)
 {
     LogStatic::logger()->info("create descriptor set.");
-    auto env = EnvSingleton::env();
+    auto env = Hiss::Env::env();
 
 
     if (uniform_buffer_list.size() != frames_in_flight)

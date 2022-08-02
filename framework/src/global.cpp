@@ -43,10 +43,10 @@ vk::Instance instance_create(const vk::DebugUtilsMessengerCreateInfoEXT &dbg_msg
     // （这是可选的） 关于应用程序的信息，驱动可以根据这些信息对应用程序进行一些优化
     vk::ApplicationInfo app_info = {
             .pApplicationName   = "vk app",
-            .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-            .pEngineName        = "No Engine",
-            .engineVersion      = VK_MAKE_VERSION(1, 0, 0),
-            .apiVersion         = VK_API_VERSION_1_0,
+            .applicationVersion = VK_MAKE_VERSION(1, 1, 4),
+            .pEngineName        = "Hiss Engine",
+            .engineVersion      = VK_MAKE_VERSION(5, 1, 4),
+            .apiVersion         = VK_API_VERSION_1_3,
     };
 
 

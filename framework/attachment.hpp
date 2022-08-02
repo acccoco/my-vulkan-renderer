@@ -1,5 +1,6 @@
 #pragma once
 #include "image.hpp"
+#include "env.hpp"
 
 
 class AttachmentBase
@@ -15,7 +16,7 @@ protected:
 public:
     void free()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
         env->device.destroy(_view);
         env->device.destroy(_img);
         env->device.free(_mem);
@@ -34,7 +35,7 @@ public:
     static std::shared_ptr<DepthAttachment>
     create(const vk::Extent2D &extent, vk::SampleCountFlagBits msaa, const vk::Format &format)
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
         /* 找到合适的 depth format */
         auto attach     = std::shared_ptr<DepthAttachment>(new DepthAttachment());
@@ -71,7 +72,7 @@ public:
     create(const vk::Format &format, const vk::Extent2D &extent, vk::SampleCountFlagBits msaa)
     {
         auto attach     = std::shared_ptr<ColorAttachment>(new ColorAttachment());
-        auto env        = EnvSingleton::env();
+        auto env        = Hiss::Env::env();
         attach->_format = format;
 
 

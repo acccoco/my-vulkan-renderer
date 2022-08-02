@@ -1,5 +1,6 @@
 #pragma once
 #include "attachment.hpp"
+#include "env.hpp"
 
 
 struct FramebufferLayout_temp {
@@ -29,7 +30,7 @@ private:
                     const FramebufferLayout_temp &framebuffer_layout,
                     const std::vector<vk::ImageView> &resolve_views, const vk::Extent2D &extent)
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
 
         /* 创建各种 attachment */
@@ -55,8 +56,7 @@ private:
         for (const auto &resolve_view: resolve_views)
         {
             attachments[2] = resolve_view;
-            _framebuffers.push_back(
-                    EnvSingleton::env()->device.createFramebuffer(
+            _framebuffers.push_back(Hiss::Env::env()->device.createFramebuffer(
                     framebuffer_create_info));
         }
     }
@@ -80,7 +80,7 @@ public:
 
     void free()
     {
-        auto env = EnvSingleton::env();
+        auto env = Hiss::Env::env();
 
         for (auto &framebuffer: _framebuffers)
             env->device.destroy(framebuffer);
